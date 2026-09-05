@@ -163,6 +163,19 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	if (!config_JSON.反代.路径模板.TURN) config_JSON.反代.路径模板.TURN = { 全局: "turn://" + 占位符, 标准: "turn=" + 占位符 };
 	if (!config_JSON.反代.路径模板.SSTP) config_JSON.反代.路径模板.SSTP = { 全局: "sstp://" + 占位符, 标准: "sstp=" + 占位符 };
 
+	// ============ M1-P0 KV 全量配置 cfg:{host}（优先级：KV > env > 默认值）============
+	// 以访问域名分桶；存在则整体覆盖 env/默认值，缺失回落 env/默认值；与旧 config.json 键互不冲突。
+	try {
+		const KV全量配置名 = 'cfg:' + host;
+		const KV全量配置文本 = await env.KV.get(KV全量配置名);
+		if (KV全量配置文本) {
+			const KV全量配置对象 = JSON.parse(KV全量配置文本);
+			if (KV全量配置对象 && typeof KV全量配置对象 === 'object') 深合并配置(config_JSON, KV全量配置对象);
+		}
+	} catch (error) {
+		console.error(`读取KV全量配置 cfg:${host} 出错: ${error.message}`);
+	}
+
 	const 代理配置 = config_JSON.反代.路径模板[config_JSON.反代.SOCKS5.启用?.toUpperCase()];
 
 	let 路径反代参数 = '';
@@ -279,5 +292,23 @@ async function 全局读取配置(env, request, url) {
 		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
 	}
 	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+}
+
+///////////////////////////////////////////////////////M1-P0 KV 全量配置深合并工具///////////////////////////////////////////////////////
+// 将来源对象递归合并到目标对象（来源值覆盖目标值）。数组/非对象整体替换，undefined 跳过。
+function 深合并配置(目标, 来源) {
+	if (!目标 || !来源 || typeof 目标 !== 'object' || typeof 来源 !== 'object') return 目标;
+	if (Array.isArray(来源)) return 目标;
+	for (const 键 of Object.keys(来源)) {
+		const 值 = 来源[键];
+		if (值 === undefined) continue;
+		if (值 && typeof 值 === 'object' && !Array.isArray(值) &&
+			目标[键] && typeof 目标[键] === 'object' && !Array.isArray(目标[键])) {
+			深合并配置(目标[键], 值);
+		} else {
+			目标[键] = 值;
+		}
+	}
+	return 目标;
 }
 

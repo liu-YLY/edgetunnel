@@ -331,6 +331,21 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 	const pathLower = pathname.toLowerCase();
 	let 反代IP = 默认反代IP, 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {}, 启用反代兜底 = 默认反代兜底;
 	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底 };
+	// ============ M1-P0 path 逐节点覆盖白名单（p/wk/rm/s）============
+	// 白名单外的查询参数一律忽略；p 与 wk 互斥：写 p 则地区匹配整体跳过。
+	// 说明：wk/rm 当前为预留字段——互斥与入参记录已生效，但"按地区选择出口"依赖
+	// 反代域名模板，将在 M2 出站官方直连化改造时一并接入消费点。
+	const p覆盖 = searchParams.get('p');
+	const wk覆盖 = searchParams.get('wk');
+	const rm覆盖 = searchParams.get('rm');
+	const s覆盖 = searchParams.get('s');
+	反代上下文.覆盖参数 = { p: p覆盖, wk: wk覆盖, rm: rm覆盖, s: s覆盖 };
+	const 写入了p = p覆盖 !== null;
+	反代上下文.跳过地区匹配 = 写入了p;
+	反代上下文.地区 = 写入了p ? null : wk覆盖;      // 地区覆盖（写 p 时置空，地区匹配跳过）
+	反代上下文.地区匹配 = 写入了p ? false : ['1', 'true', 'yes', 'on'].includes(rm覆盖); // 地区匹配开关
+	if (写入了p && p覆盖)反代IP = p覆盖;           // p（ProxyIP）：直接覆盖连接级反代IP，并关闭兜底
+	if (写入了p)启用反代兜底 = false;
 	const 保存快照 = () => {
 		反代上下文.反代IP = 反代IP;
 		反代上下文.代理类型 = 启用SOCKS5反代;
@@ -436,6 +451,17 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 				保存快照();
 				return 反代上下文;
 			}
+		}
+	}
+
+	// M1-P0 path 覆盖 s（出站代理）：解析为链式代理 URL，或作为反代IP（p 优先）
+	if (s覆盖 !== null && s覆盖) {
+		if (解析代理URL(s覆盖, true)) {
+			启用反代兜底 = false;
+			反代上下文.覆盖参数.出站代理 = s覆盖;
+		} else if (!写入了p) {
+			设置反代IP(s覆盖);
+			反代上下文.覆盖参数.出站代理 = s覆盖;
 		}
 	}
 

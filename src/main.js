@@ -263,6 +263,17 @@ export default {
 								console.error('保存自定义IP失败:', error);
 								return new Response(JSON.stringify({ error: '保存自定义IP失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
+						} else if (区分大小写访问路径 === 'admin/config') { // M1-P0 保存 KV 全量配置 cfg:{host}
+							try {
+								const newConfig = await request.json();
+								if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) return new Response(JSON.stringify({ error: '配置格式不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								await env.KV.put('cfg:' + host, JSON.stringify(newConfig, null, 2));
+								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config_KV', config_JSON));
+								return new Response(JSON.stringify({ success: true, message: '配置已保存到 KV（cfg:' + host + '）' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							} catch (error) {
+								console.error('保存KV全量配置失败:', error);
+								return new Response(JSON.stringify({ error: '保存KV全量配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							}
 						} else return new Response(JSON.stringify({ error: '不支持的POST请求路径' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON
 						return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -272,6 +283,8 @@ export default {
 						return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
+						return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));

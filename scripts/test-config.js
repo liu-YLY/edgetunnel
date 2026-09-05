@@ -64,7 +64,38 @@ const TEST_BODY = `
   assert.strictEqual(cfg.KV可用, true, 'KV 绑定可识别');
   assert.strictEqual(cfg.伪装页URL, 'https://fake.example.com', '伪装页规范化（强制 https + 去路径）');
 
-  console.log('[test] 全部断言通过（场景1 基础 env / 场景2 全量 env）');
+  console.log('[test] 场景1 基础 env / 场景2 全量 env');
+
+  // ===== M1-P0 config 覆盖断言 =====
+  // 场景 3：KV 全量配置 cfg:{host} 优先于 env（KV > env > 默认值）
+  const cfgKV全量 = { 跳过证书验证: true, PATH: '/kvpath' };
+  const kvCfgStub = { get: async (k) => k === 'cfg:kv.example.com' ? JSON.stringify(cfgKV全量) : null, put: async () => {} };
+  cfg = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', PATH: '/envpath', KV: kvCfgStub }, 'kv.example.com', '11111111-1111-4111-8111-111111111111', 'test');
+  assert.strictEqual(cfg.PATH, '/kvpath', 'KV cfg:{host} 覆盖 env.PATH');
+  assert.strictEqual(cfg.跳过证书验证, true, 'KV cfg:{host} 覆盖默认值');
+
+  // KV 缺键回退 env/默认值（缺键不崩溃）
+  cfg = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', PATH: '/envpath', KV: { get: async () => null, put: async () => {} } }, 'kv.example.com', '11111111-1111-4111-8111-111111111111', 'test');
+  assert.strictEqual(cfg.PATH, '/envpath', 'KV 缺 cfg:{host} 时回退 env.PATH');
+
+  // 场景 4：path 逐节点覆盖与 p/wk 互斥
+  let ctx = await 反代参数获取(new URL('https://example.com/?p=9.9.9.9:443'), '00000000-0000-4000-8000-000000000000');
+  assert.strictEqual(ctx.反代IP, '9.9.9.9:443', 'path 参数 p 覆盖连接级反代IP');
+  assert.strictEqual(ctx.跳过地区匹配, true, '写 p 则跳过地区匹配');
+  assert.strictEqual(ctx.地区匹配, false, '写 p 时地区匹配关闭');
+  assert.strictEqual(ctx.地区, null, '写 p 时地区置空（p 与 wk 互斥）');
+
+  ctx = await 反代参数获取(new URL('https://example.com/?wk=hk&rm=true'), '00000000-0000-4000-8000-000000000000');
+  assert.strictEqual(ctx.地区, 'hk', 'wk 记录地区覆盖');
+  assert.strictEqual(ctx.地区匹配, true, 'rm 开启地区匹配');
+  assert.strictEqual(ctx.跳过地区匹配, false, '未写 p 时不跳过地区匹配');
+
+  ctx = await 反代参数获取(new URL('https://example.com/?p=9.9.9.9:443&wk=hk&rm=true'), '00000000-0000-4000-8000-000000000000');
+  assert.strictEqual(ctx.反代IP, '9.9.9.9:443', 'p 与 wk 同时出现时 p 生效（ProxyIP 覆盖）');
+  assert.strictEqual(ctx.地区, null, 'p 与 wk 互斥：wk 被忽略');
+  assert.strictEqual(ctx.跳过地区匹配, true, 'p 与 wk 互斥：地区匹配跳过');
+
+  console.log('[test] 全部断言通过（场景1 基础 env / 场景2 全量 env / 场景3 KV>env / 场景4 path 覆盖 & p/wk 互斥）');
   process.exit(0);
 })().catch((e) => { console.error('[test] FAIL:', e); process.exit(1); });
 `;

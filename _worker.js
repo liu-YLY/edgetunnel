@@ -265,6 +265,17 @@ export default {
 								console.error('保存自定义IP失败:', error);
 								return new Response(JSON.stringify({ error: '保存自定义IP失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
+						} else if (区分大小写访问路径 === 'admin/config') { // M1-P0 保存 KV 全量配置 cfg:{host}
+							try {
+								const newConfig = await request.json();
+								if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) return new Response(JSON.stringify({ error: '配置格式不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								await env.KV.put('cfg:' + host, JSON.stringify(newConfig, null, 2));
+								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config_KV', config_JSON));
+								return new Response(JSON.stringify({ success: true, message: '配置已保存到 KV（cfg:' + host + '）' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							} catch (error) {
+								console.error('保存KV全量配置失败:', error);
+								return new Response(JSON.stringify({ error: '保存KV全量配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							}
 						} else return new Response(JSON.stringify({ error: '不支持的POST请求路径' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON
 						return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -274,6 +285,8 @@ export default {
 						return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
+						return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
@@ -5460,6 +5473,47 @@ function 替换星号为随机字符(内容) {
 	});
 }
 
+///////////////////////////////////////////////////////M1-P0 配置页（/admin/config）///////////////////////////////////////////////////////
+// 复用登录 cookie 鉴权；表单编辑 KV 全量配置（cfg:{host}），env 配置只读展示。默认值兜底、缺键不崩溃。
+function 管理面板配置页HTML(env, config_JSON) {
+	const 只读env字段 = [
+		['ADMIN', env.ADMIN ? '已配置（用于登录）' : '未配置'],
+		['KEY', env.KEY ? 掩码敏感信息(String(env.KEY)) : '未配置'],
+		['HOST', env.HOST || '（默认取访问域名）'],
+		['UUID', env.UUID || '（自动生成）'],
+		['PROXYIP', env.PROXYIP || '（未配置）'],
+		['URL', env.URL || 'nginx'],
+		['PATH', env.PATH || '/'],
+		['GO2SOCKS5', env.GO2SOCKS5 || '（未配置）'],
+		['DEBUG', (env.DEBUG ? '已开启' : '关闭')],
+		['BEST_SUB', (env.BEST_SUB ? '已开启' : '关闭')],
+		['PROXY_CONCURRENT_DIAL', env.PROXY_CONCURRENT_DIAL || '1'],
+		['TCP_CONCURRENT_DIAL', env.TCP_CONCURRENT_DIAL || '2'],
+	];
+	const 只读env行 = 只读env字段.map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${值}</td></tr>`).join('');
+	return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配置管理 - edgetunnel</title><style>
+*{box-sizing:border-box}body{font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#0f1420;color:#e6e8ee}
+.wrap{max-width:960px;margin:0 auto;padding:24px}h1{font-size:20px;margin:0 0 4px}h1 small{font-size:13px;color:#8b93a7;font-weight:400}
+.sub{color:#8b93a7;font-size:13px;margin:0 0 20px}.card{background:#1a2130;border:1px solid #2a3346;border-radius:10px;padding:16px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 12px;color:#c9d2e3}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+textarea{width:100%;height:360px;background:#0f1420;color:#d8e0ee;border:1px solid #2a3346;border-radius:8px;padding:10px;font:12px/1.5 monospace;resize:vertical}
+table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px 8px;border-bottom:1px solid #232c3e}td.mn{width:220px;color:#8b93a7}
+button{background:#2f81f7;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer}button:hover{background:#1f6bd6}
+button.ghost{background:#2a3346}.tag{font-size:12px;color:#6fd18a}
+#status{margin-left:10px;font-size:13px;color:#8b93a7;word-break:break-all}</style></head><body><div class="wrap">
+<h1>配置管理 <small>路径优先级：path 参数 &gt; KV(cfg:{host}) &gt; env &gt; 默认值</small></h1>
+<p class="sub">编辑下方 JSON 并保存，即写入当前访问域名的 KV 全量配置（<code>cfg:{host}</code>）；保存后立即生效。留空/缺键回退到环境变量与默认值。</p>
+<div class="card"><div class="row"><h2>KV 全量配置（可编辑）</h2><div><button onclick="saveCfg()">保存到 KV</button><span id="status"></span></div></div>
+<textarea id="cfg" spellcheck="false" placeholder="正在加载当前生效配置…"></textarea></div>
+<div class="card"><h2>环境变量（只读）<span class="tag">亮起优先于默认值，KV 配置优先于 env</span></h2><table>${只读env行}</table></div>
+</div><script>
+async function loadCfg(){try{const r=await fetch('/admin/config.json');if(!r.ok)throw new Error('HTTP '+r.status);const cfg=await r.json();document.getElementById('cfg').value=JSON.stringify(cfg,null,2);d('已加载当前生效配置（KV>env>默认值）');}catch(e){document.getElementById('cfg').placeholder='加载失败：'+e.message;}}
+async function saveCfg(){const el=document.getElementById('cfg');let obj;try{obj=JSON.parse(el.value);}catch(e){d('JSON 解析失败：'+e.message);return;}const r=await fetch('/admin/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});let res={};try{res=await r.json();}catch(_){}d(r.ok?('保存成功：'+ (res.message||'')):('保存失败：'+JSON.stringify(res)));}
+function d(m){const s=document.getElementById('status');s.textContent=m;}
+loadCfg();
+</script></body></html>`;
+}
+
 
 // ===========================================================================
 // --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
@@ -5795,6 +5849,19 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	if (!config_JSON.反代.路径模板.TURN) config_JSON.反代.路径模板.TURN = { 全局: "turn://" + 占位符, 标准: "turn=" + 占位符 };
 	if (!config_JSON.反代.路径模板.SSTP) config_JSON.反代.路径模板.SSTP = { 全局: "sstp://" + 占位符, 标准: "sstp=" + 占位符 };
 
+	// ============ M1-P0 KV 全量配置 cfg:{host}（优先级：KV > env > 默认值）============
+	// 以访问域名分桶；存在则整体覆盖 env/默认值，缺失回落 env/默认值；与旧 config.json 键互不冲突。
+	try {
+		const KV全量配置名 = 'cfg:' + host;
+		const KV全量配置文本 = await env.KV.get(KV全量配置名);
+		if (KV全量配置文本) {
+			const KV全量配置对象 = JSON.parse(KV全量配置文本);
+			if (KV全量配置对象 && typeof KV全量配置对象 === 'object') 深合并配置(config_JSON, KV全量配置对象);
+		}
+	} catch (error) {
+		console.error(`读取KV全量配置 cfg:${host} 出错: ${error.message}`);
+	}
+
 	const 代理配置 = config_JSON.反代.路径模板[config_JSON.反代.SOCKS5.启用?.toUpperCase()];
 
 	let 路径反代参数 = '';
@@ -5911,6 +5978,24 @@ async function 全局读取配置(env, request, url) {
 		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
 	}
 	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+}
+
+///////////////////////////////////////////////////////M1-P0 KV 全量配置深合并工具///////////////////////////////////////////////////////
+// 将来源对象递归合并到目标对象（来源值覆盖目标值）。数组/非对象整体替换，undefined 跳过。
+function 深合并配置(目标, 来源) {
+	if (!目标 || !来源 || typeof 目标 !== 'object' || typeof 来源 !== 'object') return 目标;
+	if (Array.isArray(来源)) return 目标;
+	for (const 键 of Object.keys(来源)) {
+		const 值 = 来源[键];
+		if (值 === undefined) continue;
+		if (值 && typeof 值 === 'object' && !Array.isArray(值) &&
+			目标[键] && typeof 目标[键] === 'object' && !Array.isArray(目标[键])) {
+			深合并配置(目标[键], 值);
+		} else {
+			目标[键] = 值;
+		}
+	}
+	return 目标;
 }
 
 
@@ -6249,6 +6334,21 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 	const pathLower = pathname.toLowerCase();
 	let 反代IP = 默认反代IP, 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {}, 启用反代兜底 = 默认反代兜底;
 	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底 };
+	// ============ M1-P0 path 逐节点覆盖白名单（p/wk/rm/s）============
+	// 白名单外的查询参数一律忽略；p 与 wk 互斥：写 p 则地区匹配整体跳过。
+	// 说明：wk/rm 当前为预留字段——互斥与入参记录已生效，但"按地区选择出口"依赖
+	// 反代域名模板，将在 M2 出站官方直连化改造时一并接入消费点。
+	const p覆盖 = searchParams.get('p');
+	const wk覆盖 = searchParams.get('wk');
+	const rm覆盖 = searchParams.get('rm');
+	const s覆盖 = searchParams.get('s');
+	反代上下文.覆盖参数 = { p: p覆盖, wk: wk覆盖, rm: rm覆盖, s: s覆盖 };
+	const 写入了p = p覆盖 !== null;
+	反代上下文.跳过地区匹配 = 写入了p;
+	反代上下文.地区 = 写入了p ? null : wk覆盖;      // 地区覆盖（写 p 时置空，地区匹配跳过）
+	反代上下文.地区匹配 = 写入了p ? false : ['1', 'true', 'yes', 'on'].includes(rm覆盖); // 地区匹配开关
+	if (写入了p && p覆盖)反代IP = p覆盖;           // p（ProxyIP）：直接覆盖连接级反代IP，并关闭兜底
+	if (写入了p)启用反代兜底 = false;
 	const 保存快照 = () => {
 		反代上下文.反代IP = 反代IP;
 		反代上下文.代理类型 = 启用SOCKS5反代;
@@ -6354,6 +6454,17 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 				保存快照();
 				return 反代上下文;
 			}
+		}
+	}
+
+	// M1-P0 path 覆盖 s（出站代理）：解析为链式代理 URL，或作为反代IP（p 优先）
+	if (s覆盖 !== null && s覆盖) {
+		if (解析代理URL(s覆盖, true)) {
+			启用反代兜底 = false;
+			反代上下文.覆盖参数.出站代理 = s覆盖;
+		} else if (!写入了p) {
+			设置反代IP(s覆盖);
+			反代上下文.覆盖参数.出站代理 = s覆盖;
 		}
 	}
 
