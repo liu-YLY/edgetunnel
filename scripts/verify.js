@@ -1,67 +1,66 @@
-// 校验脚本：剥离构建产物中的 HEADER / FOOTER / 分隔注释 / 锚点注释后，
-// 与 /tmp/original_worker.js（git main:_worker.js 备份）逐字节比对。
+// 校验脚本（M0-3 起职责：结构校验 + 可重现性，不再做逐字节比对——
+// 切分任务已结束，业务逻辑已允许演进）。
+// 校验点：
+//   1. 由 src/ 重新构建产物，与仓库内 _worker.js 完全一致（防漂移，本地版）
+//   2. 产物通过 node --check 语法校验
+//   3. 关键全局函数存在性检查
 'use strict';
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execFileSync } = require('child_process');
 
 const ROOT = '/workspace';
-const PRODUCT = process.argv[2] || `${ROOT}/_worker.js`;
-const ORIGINAL = '/tmp/original_worker.js';
+const PRODUCT = path.join(ROOT, '_worker.js');
+const TMP_OUT = path.join(os.tmpdir(), `verify-${process.pid}-${Date.now()}.js`);
 
-const product = fs.readFileSync(PRODUCT, 'utf8');
-const original = fs.readFileSync(ORIGINAL, 'utf8');
+// 关键全局函数/常量清单（拼接态顶层作用域，按 build 后产物检查）
+const KEY_FUNCTIONS = [
+  '处理WS请求',
+  '处理gRPC请求',
+  '处理叉HTTP请求',
+  '读取config_JSON',
+  '全局读取配置',
+  'buildClientHello',
+  'forwardataTCP',
+  'Clash订阅配置文件热补丁',
+  'Singbox订阅配置文件热补丁',
+];
 
-// 与 build.js 中定义保持一致
-const HEADER_COMMENT = [
-  '// ===========================================================================',
-  '// M0 单文件 Worker 构建产物（由 build.js 生成，请勿手动编辑）',
-  '// ===========================================================================',
-  '',
-].join('\n');
-
-const FOOTER_COMMENT = [
-  '// ===========================================================================',
-  '// 构建结束',
-  '// ===========================================================================',
-  '',
-].join('\n');
-
-const FILE_SEPARATOR_COMMENT = [
-  '',
-  '// ===========================================================================',
-  '// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---',
-  '// ===========================================================================',
-  '',
-].join('\n');
-
-function stripAll(text) {
-  let t = text;
-  if (t.startsWith(HEADER_COMMENT)) t = t.slice(HEADER_COMMENT.length);
-  else console.error('[check] 警告：产物未以 HEADER 开头');
-  if (t.endsWith(FOOTER_COMMENT)) t = t.slice(0, t.length - FOOTER_COMMENT.length);
-  else console.error('[check] 警告：产物未以 FOOTER 结尾');
-  // 剥离文件间分隔注释
-  t = t.split(FILE_SEPARATOR_COMMENT).join('');
-  // 剥离残余锚点注释（构建时已剥离，此处兜底）
-  t = t.replace(/\/\*# anchor[\s\S]*?\*\/\r?\n?/g, '');
-  return t;
+function build() {
+  execFileSync(process.execPath, [path.join(ROOT, 'build.js'), '--force', '--out', TMP_OUT], {
+    cwd: ROOT,
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
 }
 
-const stripped = stripAll(product);
-
-const same = stripped === original;
-console.log(`[check] 产物字节数: ${product.length}`);
-console.log(`[check] 剥离后字节数: ${stripped.length}`);
-console.log(`[check] 原始备份字节数: ${original.length}`);
-console.log(`[check] 逐字节一致: ${same ? '是' : '否'}`);
-
-if (!same) {
-  // 定位首个差异位置
-  let i = 0;
-  const max = Math.max(stripped.length, original.length);
-  while (i < max && stripped.charCodeAt(i) === original.charCodeAt(i)) i++;
-  console.error(`[check] 首个差异偏移: ${i}`);
-  console.error('[check]  被剥离产物: ' + JSON.stringify(stripped.slice(Math.max(0, i - 40), i + 60)));
-  console.error('[check]  原始备份  : ' + JSON.stringify(original.slice(Math.max(0, i - 40), i + 60)));
+function fail(msg) {
+  console.error(`[check] FAIL: ${msg}`);
+  try { fs.rmSync(TMP_OUT, { force: true }); } catch (_) {}
   process.exit(1);
 }
-console.log('[check] 通过');
+
+try {
+  // 1) 重新构建到临时文件并语法校验
+  build();
+  execFileSync(process.execPath, ['--check', TMP_OUT], { stdio: ['ignore', 'inherit', 'inherit'] });
+  console.log('[check] 重新构建 + node --check 通过');
+
+  // 2) 与仓库内产物逐字节一致（确认未漂移）
+  const built = fs.readFileSync(TMP_OUT, 'utf8');
+  const stored = fs.readFileSync(PRODUCT, 'utf8');
+  if (built !== stored) fail(`构建产物与仓库 _worker.js 不一致（构建后可重现性被破坏），diff 大小: ${built.length - stored.length}`);
+  console.log(`[check] 构建产物与仓库内一致（${built.length} 字节）`);
+
+  // 3) 关键全局函数存在性
+  for (const name of KEY_FUNCTIONS) {
+    if (!built.includes(name)) fail(`缺少关键全局函数: ${name}`);
+  }
+  console.log(`[check] ${KEY_FUNCTIONS.length} 个关键全局函数均存在`);
+
+  console.log('[check] 通过');
+} catch (e) {
+  fail(e.message || String(e));
+} finally {
+  fs.rmSync(TMP_OUT, { force: true });
+}
