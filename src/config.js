@@ -245,3 +245,39 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	return config_JSON;
 }
 
+///////////////////////////////////////////////////////统一配置读取入口（M0-3）///////////////////////////////////////////////
+// 收敛 fetch 主流程里的散落 env 读取，组合"env 读取 + KV 可用性"。行为与旧代码逐字段一致，不引入新逻辑。
+async function 全局读取配置(env, request, url) {
+	const 管理员密码 = env.ADMIN || env.admin || env.PASSWORD || env.password || env.pswd || env.TOKEN || env.KEY || env.UUID || env.uuid;
+	const 加密秘钥 = env.KEY || '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改';
+	const userIDMD5 = await MD5MD5(管理员密码 + 加密秘钥);
+	const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+	const envUUID = env.UUID || env.uuid;
+	const userID = (envUUID && uuidRegex.test(envUUID)) ? envUUID.toLowerCase() : [userIDMD5.slice(0, 8), userIDMD5.slice(8, 12), '4' + userIDMD5.slice(13, 16), '8' + userIDMD5.slice(17, 20), userIDMD5.slice(20)].join('-');
+	const hosts = env.HOST ? (await 整理成数组(env.HOST)).map(h => h.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0]) : [url.hostname];
+	const host = hosts[0];
+	调试日志打印 = ['1', 'true'].includes(env.DEBUG) || 调试日志打印;
+	预加载竞速拨号 = ['1', 'true'].includes(env.PRELOAD_RACE_DIAL) || 预加载竞速拨号;
+	反代并发拨号数 = Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 反代并发拨号数);
+	TCP并发拨号数 = Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || TCP并发拨号数);
+	if (!env.TCP_CONCURRENT_DIAL && TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
+	let 默认反代IP = (`${request.cf.colo}.${特征码字典[0]}.${特征码字典[1]}SsSs.nEt`).toLowerCase(), 默认反代兜底 = true;
+	if (env.PROXYIP) {
+		const proxyIPs = await 整理成数组(env.PROXYIP);
+		默认反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
+		默认反代兜底 = false;
+	}
+	if (缓存SOCKS5白名单 === null) {
+		if (env.GO2SOCKS5) SOCKS5白名单 = [...new Set(SOCKS5白名单.concat(await 整理成数组(env.GO2SOCKS5)))];
+		缓存SOCKS5白名单 = SOCKS5白名单;
+	} else SOCKS5白名单 = 缓存SOCKS5白名单;
+	let 伪装页URL = env.URL || 'nginx';
+	if (伪装页URL && 伪装页URL !== 'nginx' && 伪装页URL !== '1101') {
+		伪装页URL = 伪装页URL.trim().replace(/\/$/, '');
+		if (!伪装页URL.match(/^https?:\/\//i)) 伪装页URL = 'https://' + 伪装页URL;
+		if (伪装页URL.toLowerCase().startsWith('http://')) 伪装页URL = 'https://' + 伪装页URL.substring(7);
+		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
+	}
+	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+}
+
