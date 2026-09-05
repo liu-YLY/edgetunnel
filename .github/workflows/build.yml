@@ -33,3 +33,5 @@ jobs:
         run: node scripts/verify.js
       - name: Config layer golden tests
         run: node scripts/test-config.js
+      - name: Subscription client golden tests
+        run: node scripts/test-subscribe.js

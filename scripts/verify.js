@@ -27,6 +27,11 @@ const KEY_FUNCTIONS = [
   'forwardataTCP',
   'Clash订阅配置文件热补丁',
   'Singbox订阅配置文件热补丁',
+  'Loon订阅配置文件热补丁',
+  'QuantumultX订阅配置文件热补丁',
+  '生成Shadowrocket订阅',
+  '生成V2rayN订阅',
+  '识别订阅类型',
 ];
 
 function build() {
