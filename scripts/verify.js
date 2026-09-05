@@ -10,7 +10,9 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
-const ROOT = '/workspace';
+// 仓库根：基于脚本位置推导（verify.js 位于 scripts/ 下），
+// 兼容本地沙箱与 CI checkout（两者工作目录不同，禁止硬编码绝对路径）。
+const ROOT = path.resolve(__dirname, '..');
 const PRODUCT = path.join(ROOT, '_worker.js');
 const TMP_OUT = path.join(os.tmpdir(), `verify-${process.pid}-${Date.now()}.js`);
 

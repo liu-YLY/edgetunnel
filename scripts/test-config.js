@@ -7,7 +7,9 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
-const ROOT = '/workspace';
+// 仓库根：基于脚本位置推导（test-config.js 位于 scripts/ 下），
+// 兼容本地沙箱与 CI checkout（两者工作目录不同，禁止硬编码绝对路径）。
+const ROOT = path.resolve(__dirname, '..');
 const PRODUCT = path.join(ROOT, '_worker.js');
 
 // 测试体：注入到 bundle 末尾一并执行（与 _worker.js 顶层共享作用域）
