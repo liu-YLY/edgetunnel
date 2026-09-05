@@ -1,3 +1,6 @@
+// ===========================================================================
+// M0 单文件 Worker 构建产物（由 build.js 生成，请勿手动编辑）
+// ===========================================================================
 ﻿const Version = '2026-08-11 14:45:22';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
@@ -527,6 +530,10 @@ export default {
 		return new Response(await nginx(), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 	}
 };
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 ///////////////////////////////////////////////////////////////////////叉HTTP传输数据///////////////////////////////////////////////
 const HPACKHuffman码长 = [
 	13, 23, 28, 28, 28, 28, 28, 28, 28, 24, 30, 28, 28, 30, 28, 28,
@@ -975,6 +982,10 @@ async function 读取叉HTTP首包(reader, token) {
 	if (最终魏烈思结果.状态 === 'ok') return { ...最终魏烈思结果.结果, reader };
 	return null;
 }
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 ///////////////////////////////////////////////////////////////////////gRPC传输数据///////////////////////////////////////////////
 async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 	if (!request.body) return new Response('Bad Request', { status: 400 });
@@ -1245,6 +1256,10 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 	}), { status: 200, headers: grpcHeaders });
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function 是有效WS早期数据(bytes, token) {
 	if (!bytes?.byteLength) return false;
 	if (bytes.byteLength >= 18 && UUID字节匹配(bytes, 1, token)) return true;
@@ -1786,6 +1801,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	return new Response(null, { status: 101, webSocket: clientSock, headers: { 'Sec-WebSocket-Extensions': '' } });
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 const 木马文本解码器 = new TextDecoder();
 
 function 解析木马反代地址(address) {
@@ -1921,6 +1940,10 @@ function 解析木马请求(buffer, passwordPlainText) {
 	};
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 const UUID字节缓存 = new Map();
 const 魏烈思文本解码器 = new TextDecoder();
 
@@ -2011,6 +2034,10 @@ function 解析魏烈思请求(chunk, token) {
 	return { hasError: false, addressType, port, hostname, isUDP, rawClientData: data.subarray(rawIndex), version };
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 const SS支持加密配置 = {
 	'aes-128-gcm': { method: 'aes-128-gcm', keyLen: 16, saltLen: 16, maxChunk: 0x3fff, aesLength: 128 },
 	'aes-256-gcm': { method: 'aes-256-gcm', keyLen: 32, saltLen: 32, maxChunk: 0x3fff, aesLength: 256 },
@@ -2166,6 +2193,10 @@ async function SSAEAD解密(cryptoKey, nonceCounter, ciphertext) {
 	return new Uint8Array(pt);
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, yourUUID, request = null, 反代上下文 = {}, 允许木马反代 = false, 木马反代首包数据 = null, 仅建立连接 = false) {
 	const ctx反代IP = 反代上下文.反代IP || '';
 	const ctx代理类型 = 反代上下文.代理类型 !== undefined ? 反代上下文.代理类型 : null;
@@ -2504,6 +2535,10 @@ async function forwardataudp(udpChunk, webSocket, respHeader, request, 响应封
 	}
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function closeSocketQuietly(socket) {
 	try {
 		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
@@ -3093,6 +3128,10 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 	closeSocketQuietly(webSocket);
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function isSpeedTestSite(hostname) {
 	const speedTestDomains = ['speed.cloudflare.com', 'cp.cloudflare.com'];
 	hostname = hostname.toLowerCase();
@@ -3332,6 +3371,10 @@ function 创建请求TCP连接器(request) {
 	if (!fetcher || typeof fetcher.connect !== 'function') throw new Error('request.fetcher.connect unavailable');
 	return (options, init) => init === undefined ? fetcher.connect(options) : fetcher.connect(options, init);
 }
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 ////////////////////////////////////////////TLSClient by: @Alexandre_Kojeve////////////////////////////////////////////////
 const TLS_VERSION_10 = 769, TLS_VERSION_12 = 771, TLS_VERSION_13 = 772;
 const CONTENT_TYPE_CHANGE_CIPHER_SPEC = 20, CONTENT_TYPE_ALERT = 21, CONTENT_TYPE_HANDSHAKE = 22, CONTENT_TYPE_APPLICATION_DATA = 23;
@@ -4007,6 +4050,10 @@ class TlsClient {
 	close() { this.socket.close() }
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function stripIPv6Brackets(hostname = '') {
 	const host = String(hostname || '').trim();
 	return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
@@ -4730,6 +4777,10 @@ async function sstpConnect(proxy, targetHost, targetPort, TCP连接) {
 		throw error;
 	}
 }
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 //////////////////////////////////////////////////功能性函数///////////////////////////////////////////////
 /**
  * 带秘钥的 Base64 编码
@@ -4806,6 +4857,10 @@ function 获取传输路径参数值(配置 = {}, 节点路径 = '/', 作为优�
 function log(...args) {
 	if (调试日志打印) console.log(...args);
 }
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 
 function Clash订阅配置文件热补丁(Clash_原始订阅内容, config_JSON = {}) {
 	const uuid = config_JSON?.UUID || null;
@@ -5024,6 +5079,10 @@ function Clash订阅配置文件热补丁(Clash_原始订阅内容, config_JSON 
 	return processedLines.join('\n');
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function Singbox订阅配置文件热补丁(SingBox_原始订阅内容, config_JSON = {}) {
 	const uuid = config_JSON?.UUID || null;
 	const fingerprint = config_JSON?.Fingerprint || "chrome";
@@ -5304,6 +5363,10 @@ async function Singbox订阅配置文件热补丁(SingBox_原始订阅内容, co
 	}
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function Surge订阅配置文件热补丁(content, url, config_JSON) {
 	const 每行内容 = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 	const 完整节点路径 = config_JSON.随机路径 ? 随机路径(config_JSON.完整节点路径) : config_JSON.完整节点路径;
@@ -5323,6 +5386,10 @@ function Surge订阅配置文件热补丁(content, url, config_JSON) {
 	return 输出内容;
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SUB", config_JSON, 是否写入KV日志 = true) {
 	try {
 		const 当前时间 = new Date();
@@ -5421,6 +5488,10 @@ function 替换星号为随机字符(内容) {
 	});
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 const DoH缓存 = {};
 const DoH缓存最大条目 = 256;
 const DoH记录类型映射 = { A: 1, NS: 2, CNAME: 5, MX: 15, TXT: 16, AAAA: 28, SRV: 33, HTTPS: 65 };
@@ -5584,6 +5655,10 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 	}
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
 	const _p = 特征码字典[0];
 	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
@@ -5830,6 +5905,10 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	return config_JSON;
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 function 识别运营商(request) {
 	const cf = request?.cf;
 	const ASN运营商映射 = {
@@ -6292,6 +6371,10 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 	return 反代上下文;
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 const 反代协议默认端口 = { socks5: 1080, http: 80, https: 443, turn: 3478, sstp: 443 };
 function 获取代理默认端口(类型) {
 	return 反代协议默认端口[String(类型 || '').toLowerCase()] || 80;
@@ -6422,6 +6505,10 @@ function sha224(s) {
 	return hex;
 }
 
+
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function 解析地址端口(proxyIP, 目标域名 = 'dash.cloudflare.com', UUID = '00000000-0000-4000-8000-000000000000') {
 	proxyIP = proxyIP.toLowerCase();
 	function 解析地址端口字符串(str) {
@@ -6628,3 +6715,6 @@ async function html1101(host, 访问IP) {
 </body>
 </html>`;
 }
+// ===========================================================================
+// 构建结束
+// ===========================================================================
