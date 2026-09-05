@@ -1,0 +1,35 @@
+name: Build Drift Check
+
+# 防漂移策略（2026-09-05 定案）：源码变更后若 _worker.js（部署产物）未同步更新，
+# 本工作流直接报错提示，不做自动提交，保持 main 提交历史由人控制。
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'build.js'
+      - 'scripts/**'
+      - 'package.json'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'build.js'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Verify _worker.js reproduces from src
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Reproducibility & structure check
+        run: node scripts/verify.js
+      - name: Config layer golden tests
+        run: node scripts/test-config.js
