@@ -207,6 +207,10 @@
 
 ---
 
+## 🧯 排障与避坑手册
+
+踩坑案例、已知技术债与变更前检查清单见 **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** —— 动手改代码前先读第三节 SOP。
+
 ## 💻 客户端适配情况
 
 | 平台 | 推荐客户端 |
