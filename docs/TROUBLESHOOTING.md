@@ -68,7 +68,7 @@
 
 | # | 级别 | 问题 | 影响 | 建议动作 |
 |---|---|---|---|---|
-| 1 | **P0** | `KEY` 未设置，UUID/Token 用默认密钥字符串（"勿动此默认密钥…"）派生 | 快速订阅路径可被猜测，派生密钥公开于源码 | `wrangler secret put KEY` 设置强随机值；注意设置后 UUID/TOKEN 会变，客户端需重新订阅 |
+| 1 | **P0** | `KEY` 未设置，UUID/Token 用默认密钥字符串（"勿动此默认密钥…"）派生 | 快速订阅路径可被猜测，派生密钥公开于源码 | `wrangler secret put KEY` 设置强随机值；注意设置后 UUID/TOKEN 会变，客户端需重新订阅 |（状态：待办）
 | 2 | **P0** | `ADMIN` / `UUID` 为 plaintext binding | 面板密码与 UUID 明文存于配置 | 迁移 `secret_text`（`wrangler secret put`），`keep_vars` 不影响 secrets |
 | 3 | P1 | `region` 出站模式仍依赖第三方 `{wk}.SsSs.nEt` 模板 | 该域名族稳定性不可控（本账号曾 61+ 次异常相关） | 仅显式 opt-in 才启用（现状安全）；长期以官方直连池替代，或自建地区出口 |
 | 4 | P1 | 订阅转换仍依赖外部 SUBAPI（clash/singbox/surge/loon/quanx 分支） | 转换器故障 → 订阅不可用（已有 10s 超时兜底，但仍是单点） | 参照 cfnew v2.9.8c 全格式 Worker 内化；shadowrocket/v2rayn 已直出可作样板 |

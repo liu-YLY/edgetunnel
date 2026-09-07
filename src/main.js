@@ -5,7 +5,9 @@ let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org',
 const Pages静态页面 = 'https://edt-pages.github.io';
 ///////////////////////////////////////////////////////全局常量和工具函数///////////////////////////////////////////////
 const WS早期数据最大字节 = 8 * 1024, WS早期数据最大头长度 = Math.ceil(WS早期数据最大字节 * 4 / 3) + 4;
-const 上行合包目标字节 = 20 * 1024, 上行队列最大字节 = 16 * 1024 * 1024, 上行队列最大条目 = 4096;
+// H4: 单连接上行缓冲 16MB→1MB(Free 128MB 内存下并发安全线 ~8→~128 连接);
+// 合包目标 20KB 不变, 1MB 队列仍容纳约 50 个合包周期, 正常流无感知
+const 上行合包目标字节 = 20 * 1024, 上行队列最大字节 = 1 * 1024 * 1024, 上行队列最大条目 = 2048;
 const 下行Grain包字节 = 32 * 1024, 下行Grain尾部阈值 = 512, 下行Grain低水位字节 = Math.max(4096, 下行Grain尾部阈值 * 12), 下行Grain最大等待轮次 = 4;
 let TCP并发拨号数 = 2, 反代并发拨号数 = 1, 预加载竞速拨号 = false;
 ///////////////////////////////////////////////////////查杀特征码///////////////////////////////////////////////
@@ -338,6 +340,7 @@ export default {
 
 								// 保存到 KV
 								await env.KV.put('config.json', JSON.stringify(newConfig, null, 2));
+								config缓存映射.clear(); // M2-P1: 失效 30s 内存缓存, 面板保存立即生效
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
@@ -347,6 +350,7 @@ export default {
 						} else if (访问路径 === 'admin/cf.json') { // 保存cf.json配置
 							try {
 								const newConfig = await request.json();
+																config缓存映射.clear(); // M2-P1: CF.Usage 已进缓存对象, 保存后失效
 								const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null, UsageAPI: null };
 								if (!newConfig.init || newConfig.init !== true) {
 									if (newConfig.Email && newConfig.GlobalAPIKey) {
@@ -401,6 +405,7 @@ export default {
 								const newConfig = await request.json();
 								if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) return new Response(JSON.stringify({ error: '配置格式不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 								await env.KV.put('cfg:' + host, JSON.stringify(newConfig, null, 2));
+								config缓存映射.clear(); // M2-P1: 失效 30s 内存缓存
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config_KV', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存到 KV（cfg:' + host + '）' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {

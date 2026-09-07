@@ -18,7 +18,18 @@ const 官方直连地址池 = [
 ];
 const 官方直连端口 = 443;
 
+// ============ M2-P1 最小版: config_JSON 30s 内存缓存 ============
+// 订阅/管理路径每请求 4×KV 串行读 + UsageAPI 查询, 高频刷新时延迟与配额放大。
+// 以 host|userID 为键缓存 30s; 面板保存配置(admin/config.json、admin/config、
+// admin/cf.json)时主动 clear()。WS 代理路径不经过此函数, 不受影响。
+// 约定: 调用方不得修改返回对象(缓存共享引用); 需要强刷传 重置配置=true。
+const config缓存映射 = new Map();
+const config缓存TTL = 30 * 1000;
+
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
+	const 缓存键 = hostname + '|' + userID;
+	const 缓存命中 = (!重置配置) && config缓存映射.get(缓存键);
+	if (缓存命中 && Date.now() - 缓存命中.t < config缓存TTL) return 缓存命中.v;
 	const _p = 特征码字典[0];
 	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
 		TIME: new Date().toISOString(),
@@ -274,6 +285,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	}
 
 	config_JSON.加载时间 = (performance.now() - 初始化开始时间).toFixed(2) + 'ms';
+	if (config缓存映射.size > 50) config缓存映射.clear();
+	config缓存映射.set(缓存键, { t: Date.now(), v: config_JSON });
 	return config_JSON;
 }
 
@@ -288,11 +301,16 @@ async function 全局读取配置(env, request, url) {
 	const userID = (envUUID && uuidRegex.test(envUUID)) ? envUUID.toLowerCase() : [userIDMD5.slice(0, 8), userIDMD5.slice(8, 12), '4' + userIDMD5.slice(13, 16), '8' + userIDMD5.slice(17, 20), userIDMD5.slice(20)].join('-');
 	const hosts = env.HOST ? (await 整理成数组(env.HOST)).map(h => h.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0]) : [url.hostname];
 	const host = hosts[0];
-	调试日志打印 = ['1', 'true'].includes(env.DEBUG) || 调试日志打印;
-	预加载竞速拨号 = ['1', 'true'].includes(env.PRELOAD_RACE_DIAL) || 预加载竞速拨号;
-	反代并发拨号数 = Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 反代并发拨号数);
-	TCP并发拨号数 = Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || TCP并发拨号数);
-	if (!env.TCP_CONCURRENT_DIAL && TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
+	// ============ H1 修复: 每请求无条件重置(以 env 派生值为准) ============
+	// 原实现以 `|| 旧值` 回退, isolate 并发请求互相污染(DEBUG 一开永久开、
+	// 拨号数被劫持继承)。现按 env 每请求重置, 语义与"请求级配置"一致。
+	// 默认值: DEBUG/竞速关闭; 反代并发 1; TCP 并发 2(cmcc 运营商降 1)。
+	调试日志打印 = ['1', 'true'].includes(env.DEBUG);
+	预加载竞速拨号 = ['1', 'true'].includes(env.PRELOAD_RACE_DIAL);
+	反代并发拨号数 = env.PROXY_CONCURRENT_DIAL ? Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 1) : 1;
+	TCP并发拨号数 = env.TCP_CONCURRENT_DIAL
+		? Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || 1)
+		: (识别运营商(request) === 'cmcc' ? 1 : 2);
 	// ============ M2-P0 出站模式三层选择 ============
 	// auto（默认）：内置官方地址池直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
 	// manual：env.PROXYIP 手填（随机取一 + 兜底关闭，与旧版行为逐字一致）；

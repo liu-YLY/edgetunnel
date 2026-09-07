@@ -80,8 +80,8 @@ const TEST_BODY = `
   assert.strictEqual(cfg.PATH, '/kvpath', 'KV cfg:{host} 覆盖 env.PATH');
   assert.strictEqual(cfg.跳过证书验证, true, 'KV cfg:{host} 覆盖默认值');
 
-  // KV 缺键回退 env/默认值（缺键不崩溃）
-  cfg = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', PATH: '/envpath', KV: { get: async () => null, put: async () => {} } }, 'kv.example.com', '11111111-1111-4111-8111-111111111111', 'test');
+  // KV 缺键回退 env/默认值（缺键不崩溃）; 重置配置=true 绕过 M2-P1 的 30s 缓存
+  cfg = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', PATH: '/envpath', KV: { get: async () => null, put: async () => {} } }, 'kv.example.com', '11111111-1111-4111-8111-111111111111', 'test', true);
   assert.strictEqual(cfg.PATH, '/envpath', 'KV 缺 cfg:{host} 时回退 env.PATH');
 
   // 场景 4：path 逐节点覆盖与 p/wk 互斥
@@ -138,7 +138,23 @@ const TEST_BODY = `
   assert.strictEqual(ctx5.反代IP, '9.9.9.9:443', 'M2-P0：p 覆盖 region+wk');
   assert.strictEqual(ctx5.反代兜底, false, 'M2-P0：p 关闭兜底（与 M1-P0 一致）');
 
-  console.log('[test] 全部断言通过（场景1 基础 env / 场景2 全量 env / 场景3 KV>env / 场景4 path 覆盖 & p/wk 互斥 / 场景5 M2-P0 出站模式 & wk/rm 端到端）');
+  // ===== M2-P1 场景 6: config_JSON 30s 内存缓存 =====
+  let kv读计数 = 0;
+  const kv计数Stub = { get: async () => { kv读计数++; return null; }, put: async () => {} };
+  const 缓存键主机 = 'cache.example.com', 缓存UUID = '11111111-1111-4111-8111-111111111111';
+  const cfg6a = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 缓存键主机, 缓存UUID, 'test');
+  const 首次读数 = kv读计数;
+  assert.ok(首次读数 >= 4, '场景6: 首次调用发生 KV 读(config/tg/cf/cfg)');
+  const cfg6b = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 缓存键主机, 缓存UUID, 'test');
+  assert.strictEqual(cfg6b, cfg6a, '场景6: 30s 内命中缓存返回同一对象');
+  assert.strictEqual(kv读计数, 首次读数, '场景6: 缓存命中零 KV 读');
+  const cfg6c = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 'other.example.com', 缓存UUID, 'test');
+  assert.notStrictEqual(cfg6c, cfg6a, '场景6: 不同 host 不命中缓存');
+  assert.ok(kv读计数 > 首次读数, '场景6: 未命中时重新读 KV');
+  const cfg6d = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 缓存键主机, 缓存UUID, 'test', true);
+  assert.notStrictEqual(cfg6d, cfg6a, '场景6: 重置配置=true 绕过缓存');
+
+  console.log('[test] 全部断言通过（场景1-2 基础/全量 env / 场景3 KV>env / 场景4 path 覆盖 / 场景5 M2-P0 出站 / 场景6 M2-P1 config 缓存）');
   process.exit(0);
 })().catch((e) => { console.error('[test] FAIL:', e); process.exit(1); });
 `;
