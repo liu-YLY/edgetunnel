@@ -47,19 +47,34 @@
 | **M2-P0.6 请求拦截** | 明确 bot 工具 UA（curl/wget/python/...）404 短路，不消耗出站子请求；监控探测 UA（uptimeflare/kuma 等）显式放行 | `25397e7` + `da3aa42` |
 | **基建修复** | 激活 KV 绑定（修复 /login /admin /sub 落伪装页不可达）；开启 `[observability]` 线上错误可回溯 | `166cfa0` `3bea638` |
 | **测试与文档** | 修复测试框架转义缺陷（订阅 golden 测试首次可运行）；Loon/QuanX 空格节点名兼容；`docs/TROUBLESHOOTING.md` 避坑手册 + 变更 SOP | `8d649e8` `6969070` |
+| **M2-P1 最小版 + 架构修复** | config_JSON 30s 内存缓存（订阅/管理路径 KV 读近零，三处面板保存点主动失效）；**全局变量 sticky 泄漏修复**（DEBUG/竞速开关/拨号数改为每请求按 env 重置）；单连接上行缓冲 16MB→**1MB**（128MB 内存下并发安全线 ~8→~128 连接）；测试新增场景 6 | `ea83c16` |
+| **文档体系** | `docs/TROUBLESHOOTING.md`（踩坑 7 例 + 技术债 + 变更 SOP）、`docs/ARCHITECTURE-LIMITS.md`（6 项架构硬伤，H1/H4 已修）、`docs/M2-P0-CHANGE-ANALYSIS.md`（改动/原理/用量/风控）、`docs/CF-COMPLIANCE-BOUNDARY.md`（协议 2.2.1(j) 边界 + 90% 额度容量模型） | `bd2a578` `6a82582` `e7ba5dc` |
 
 ### 行为变更（升级须知）
 
 1. **出站默认变化**：未设置 `PROXYIP` 时走官方地址直连（详见上方 M2-P0 行为变更提示块）；
 2. **新环境变量**：`出站模式` / `EGRESS_MODE`（`auto`/`region`），详见「环境变量说明」；
 3. **KV 绑定为必配项**：`/login` `/admin` `/sub` 均依赖 KV，未绑定将全部落伪装页；
-4. **path 参数**：`wk`/`rm` 由预留转为端到端生效，语义见「path 逐节点覆盖」表。
+4. **path 参数**：`wk`/`rm` 由预留转为端到端生效，语义见「path 逐节点覆盖」表；
+5. **bot UA 拦截**：curl/wget/python 等工具 UA 访问非功能路径返回 404（不反代伪装页）；可用性监控 UA 已放行；
+6. **配置生效延迟**：config_JSON 有 30s 内存缓存，面板保存后本 isolate 立即生效，其他边缘 isolate 最迟 30s 同步（代理路径不读配置，隧道无感知）。
 
 ### 运行效果（本 Fork 相对上游默认）
 
-- 30 天错误率 7.55% → **<1%** 目标（`scriptThrewException`/`exceededResources` 根因消除）；
+- 30 天错误率 7.55%（362 次）→ 改造后 **0 错误**（`scriptThrewException`/`exceededResources` 根因消除，uptimeflare 7/7 up）；
 - 子请求/请求比 1.92 → **<1.2** 预期（免第三方 DNS 解析 + bot 短路）；
-- 详细分析见 [`docs/M2-P0-CHANGE-ANALYSIS.md`](docs/M2-P0-CHANGE-ANALYSIS.md)，踩坑与 SOP 见 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
+- 并发安全线 ~8 → **~128** 连接（上行缓冲 16MB→1MB）；
+- 订阅/管理路径 KV 读 4 次/请求 → **30s 缓存后近零**（代理路径本就零 KV 读）；
+- 容量参考：Free 计划 100k 请求/日额度下，当前架构可承载 90% 贴顶运行（≈75-225 普通用户），建议日常水位 ≤50%。
+
+### 📚 文档索引
+
+| 文档 | 内容 |
+|---|---|
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | 踩坑 7 例 + 已知技术债 + 变更前 SOP 检查清单 |
+| [`docs/ARCHITECTURE-LIMITS.md`](docs/ARCHITECTURE-LIMITS.md) | 6 项架构级硬伤（H1/H4 已修）与修复排序 |
+| [`docs/M2-P0-CHANGE-ANALYSIS.md`](docs/M2-P0-CHANGE-ANALYSIS.md) | 改动清单 / 出站原理 / 用量增量 / 风控评估 |
+| [`docs/CF-COMPLIANCE-BOUNDARY.md`](docs/CF-COMPLIANCE-BOUNDARY.md) | CF 协议边界（§2.2.1(j)）/ Free 限额对照 / 90% 额度容量模型 |
 
 ---
 
