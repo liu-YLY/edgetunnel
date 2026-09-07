@@ -529,13 +529,12 @@ export default {
 		}
 
 		if (伪装页URL === '1101') return new Response(await html1101(url.host, 访问IP), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
-		// ============ M2-P0.6 无效请求拦截 ============
-		// 扫描器/探测器的典型特征是无浏览器 UA（空 / 'null' / 纯 bot 工具标识），
-		// 对这类请求且未命中任何功能路径时直接 404 短路：不反代伪装页、不消耗出站子请求。
-		// 正常浏览器（含 Mozilla 系 UA）仍走伪装页反代，行为不变。
-		const 非浏览器UA = !UA || UA === 'null' || (!ua是否浏览器(UA) && !upgradeHeader && !contentType.startsWith('application/grpc'));
-		if (非浏览器UA) {
-			log(`[拦截] 非浏览器请求短路: ${url.pathname}${url.search} | UA: ${UA} | IP: ${访问IP}`);
+		// ============ M2-P0.6 无效请求拦截（修订版）============
+		// 仅拦截"明确声明的扫描/工具 UA"（curl/wget/python/...）：404 短路，不反代伪装页、不消耗出站子请求。
+		// 监控探测 UA（uptimeflare/kuma 等）与未知/空 UA 一律放行走伪装页（回退改造前行为）。
+		// 修订原因：初版"非浏览器 UA 一律 404"误伤 uptimeflare 探测（期望 2xx），造成代理故障误报。
+		if (是拦截UA(UA)) {
+			log(`[拦截] bot 工具请求短路: ${url.pathname}${url.search} | UA: ${UA} | IP: ${访问IP}`);
 			return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'no-store' } });
 		}
 		try {

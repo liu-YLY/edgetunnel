@@ -76,11 +76,18 @@ function log(...args) {
 	if (调试日志打印) console.log(...args);
 }
 
-// M2-P0.6：识别"真实浏览器"UA（Mozilla 系内核标识）。
-// 用于伪装页分支前的无效请求短路：curl/python-requests/空 UA 等直接 404，不消耗出站子请求。
-function ua是否浏览器(ua) {
-	if (!ua || typeof ua !== 'string') return false;
-	// 排除已知 bot/工具 UA（它们可能含 Mozilla 伪装前缀）
-	if (/^(curl|wget|python|go-http|java|okhttp|scrapy|libwww|httpclient|axios|node|postman|insomnia)/i.test(ua.trim())) return false;
-	return /mozilla|applewebkit|gecko|chrome|safari|firefox|edg|opr|opera/i.test(ua);
+// M2-P0.6（修订版）：仅拦截"明确声明的扫描/工具 UA"。
+// 修订原因：初版把"非浏览器 UA 一律 404"，误伤了 uptimeflare 等可用性监控的
+// 探测请求（非浏览器 UA + 期望 2xx）→ 触发"EdgeTunnel 代理故障"误报（2026-09-07 事故）。
+// 修订语义：
+//   1) 明确 bot 工具前缀（curl/wget/python/...）→ 拦截 404（保留原降耗意图）；
+//   2) 可用性监控探测 UA（uptimeflare/kuma/uptimerobot/...）→ 显式放行；
+//   3) 其余未知 UA（含空 UA）→ 放行走伪装页（回退到改造前行为，零误伤）。
+const 拦截UA前缀 = /^(curl|wget|python|go-http|java\/|okhttp|scrapy|libwww|httpclient|axios|node-fetch|postman|insomnia)/i;
+const 监控探测UA = /uptimeflare|uptime|kuma|healthcheck|statuspage|pingdom|uptimerobot|gatus|cron-job/i;
+function 是拦截UA(ua) {
+	if (!ua || typeof ua !== 'string') return false; // 空 UA 放行（回退旧行为）
+	const trimmed = ua.trim();
+	if (监控探测UA.test(trimmed)) return false;      // 监控探测显式放行
+	return 拦截UA前缀.test(trimmed);                  // 仅拦明确 bot 工具
 }
