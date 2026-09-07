@@ -28,6 +28,41 @@
 
 ---
 
+## 🔱 本 Fork 迭代变更（liu-YLY 分叉）
+
+> 本仓库为 [cmliu/edgetunnel](https://github.com/cmliu/edgetunnel) 的深度迭代分叉。
+> 上游为单文件（`_worker.js`）发布形态；本 Fork 已完成工程化改造并持续迭代，
+> 与上游**结构性分叉**（无法直接 merge，上游关键修复采用手工移植策略）。
+> 分叉基点：上游 2.1（2026-05-16 同步版）。
+
+### 迭代里程碑
+
+| 阶段 | 变更 | 关键 commit |
+|---|---|---|
+| **M0 工程化** | `_worker.js` 单文件切分为 `src/` 多模块（main / config / transport / protocol / proxy / subscribe / admin）；零依赖拼接构建器 `build.js`；配置读取层 golden 测试；构建防漂移 CI | `fe4ebdf` → `9ff7f3c` |
+| **M1-P0 配置体系** | KV 全量配置 `cfg:{host}`（KV > env > 默认值，深合并，多域名互不覆盖）；path 逐节点覆盖参数 `p` / `wk` / `rm` / `s`（白名单 + p/wk 互斥） | `dbd158b` |
+| **M1-P1 订阅扩展** | 订阅类型 UA/参数映射表；Loon / QuantumultX 转换器热补丁；Shadowrocket / V2rayNG **零转换器直出**明文订阅 | `6ee5bbf` |
+| **M2-P0 出站官方直连化** | 出站三态 `auto`（默认，内置 10 个 CF 官方 IP 竞速直连）/ `manual`（PROXYIP）/ `region`（显式 opt-in，`wk` 地区模板）；**默认不再请求第三方 `{colo}.SsSs.nEt` 域名**；`wk`/`rm` 端到端生效 | `25397e7` |
+| **M2-P0.5 全局超时** | 8 处出站 fetch 加 `AbortSignal.timeout`（DoH 3s / 订阅转换 10s / CF API 10s / 伪装页 8s 等），消除 CPU 跑满导致的 `exceededResources` | `25397e7` |
+| **M2-P0.6 请求拦截** | 明确 bot 工具 UA（curl/wget/python/...）404 短路，不消耗出站子请求；监控探测 UA（uptimeflare/kuma 等）显式放行 | `25397e7` + `da3aa42` |
+| **基建修复** | 激活 KV 绑定（修复 /login /admin /sub 落伪装页不可达）；开启 `[observability]` 线上错误可回溯 | `166cfa0` `3bea638` |
+| **测试与文档** | 修复测试框架转义缺陷（订阅 golden 测试首次可运行）；Loon/QuanX 空格节点名兼容；`docs/TROUBLESHOOTING.md` 避坑手册 + 变更 SOP | `8d649e8` `6969070` |
+
+### 行为变更（升级须知）
+
+1. **出站默认变化**：未设置 `PROXYIP` 时走官方地址直连（详见上方 M2-P0 行为变更提示块）；
+2. **新环境变量**：`出站模式` / `EGRESS_MODE`（`auto`/`region`），详见「环境变量说明」；
+3. **KV 绑定为必配项**：`/login` `/admin` `/sub` 均依赖 KV，未绑定将全部落伪装页；
+4. **path 参数**：`wk`/`rm` 由预留转为端到端生效，语义见「path 逐节点覆盖」表。
+
+### 运行效果（本 Fork 相对上游默认）
+
+- 30 天错误率 7.55% → **<1%** 目标（`scriptThrewException`/`exceededResources` 根因消除）；
+- 子请求/请求比 1.92 → **<1.2** 预期（免第三方 DNS 解析 + bot 短路）；
+- 详细分析见 [`docs/M2-P0-CHANGE-ANALYSIS.md`](docs/M2-P0-CHANGE-ANALYSIS.md)，踩坑与 SOP 见 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)。
+
+---
+
 ## 💡 快速部署
 >[!TIP]
 > 📖 **详尽图文教程**：[edgetunnel 部署指南](https://cmliussss.com/p/edt2/)
