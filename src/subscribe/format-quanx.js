@@ -13,7 +13,7 @@ function QuantumultX订阅配置文件热补丁(content, url, config_JSON) {
 		const 剥离 = 原行.trim();
 		if (/^\[server_local\]\s*$/i.test(剥离)) { 在服务器段 = true; return 原行; }
 		if (/^\[[a-z0-9_ -]*\]\s*$/i.test(剥离)) { 在服务器段 = /^\[server_local\]\s*$/i.test(剥离); return 原行; }
-		if (在服务器段 && /^\S+\s*=/.test(剥离) && !/^#/.test(剥离)) {
+		if (在服务器段 && /^[^#]+?=/.test(剥离)) {
 			const 等号 = 原行.indexOf('=');
 			const 剩余 = 原行.slice(等号 + 1);
 			if (/(trojan|vmess|vless)/i.test(剩余) && /over-tls\s*=\s*true/i.test(剩余)) {

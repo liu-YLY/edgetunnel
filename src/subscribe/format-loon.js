@@ -11,7 +11,7 @@ function Loon订阅配置文件热补丁(content, url, config_JSON) {
 		const 剥离 = 原行.trim();
 		if (/^\[Proxy\]\s*$/i.test(剥离)) { 在Proxy段 = true; return 原行; }
 		if (/^\[[a-z0-9_ -]+\]\s*$/i.test(剥离)) { 在Proxy段 = /^\[Proxy\]\s*$/i.test(剥离); return 原行; }
-		if (在Proxy段 && /,/.test(剥离) && /^\S+\s*=/.test(剥离) && !/^#/.test(剥离)) {
+		if (在Proxy段 && /,/.test(剥离) && /^[^#]+?=/.test(剥离)) {
 			return 修正Loon节点行(原行, config_JSON);
 		}
 		return 原行;

@@ -42,19 +42,19 @@ const TEST_BODY = `
   const 节点列表 = [
     'vless://00000000-0000-4000-8000-000000000000@1.2.3.4:443?security=tls&type=ws&host=example.com&path=%2Fvideo#USA-01',
     'trojan://password@5.6.7.8:443?security=tls&sni=example.com&type=ws&path=%2Fvideo#JP-02',
-  ].join('\n');
+  ].join('\\n');
   for (const [函数名, 生成函数] of [['生成Shadowrocket订阅', 生成Shadowrocket订阅], ['生成V2rayN订阅', 生成V2rayN订阅]]) {
     const 结果 = 生成函数(节点列表, '/video/abc', {});
-    const 行 = 结果.trim().split('\n').filter(Boolean);
-    assert.ok(结果.length > 0, `${函数名} 返回非空`);
-    assert.strictEqual(行.length, 2, `${函数名} 保留 2 条合法节点`);
+    const 行 = 结果.trim().split('\\n').filter(Boolean);
+    assert.ok(结果.length > 0, 函数名 + ' 返回非空');
+    assert.strictEqual(行.length, 2, 函数名 + ' 保留 2 条合法节点');
     for (const 单行 of 行) {
-      assert.match(单行, /^(vless|trojan):\/\//, `${函数名} 行以 vless:// 或 trojan:// 开头`);
-      assert.ok(单行.includes('#'), `${函数名} 行含 # 备注`);
+      assert.match(单行, /^(vless|trojan):\\/\\//, 函数名 + ' 行以 vless:// 或 trojan:// 开头');
+      assert.ok(单行.includes('#'), 函数名 + ' 行含 # 备注');
     }
     // 非法行应被过滤
-    const 带垃圾 = 生成函数('not-a-link\n' + 节点列表 + '\nFINAL,DIRECT', '/video/abc', {});
-    assert.strictEqual(带垃圾.trim().split('\n').filter(Boolean).length, 2, `${函数名} 过滤非法行`);
+    const 带垃圾 = 生成函数('not-a-link\\n' + 节点列表 + '\\nFINAL,DIRECT', '/video/abc', {});
+    assert.strictEqual(带垃圾.trim().split('\\n').filter(Boolean).length, 2, 函数名 + ' 过滤非法行');
   }
 
   // ===== 4) Loon / QuanX 热补丁（不抛异常 + 非空 + 字段级修正）=====
@@ -70,7 +70,7 @@ const TEST_BODY = `
     '[Rule]',
     'FINAL,DIRECT',
     '',
-  ].join('\n');
+  ].join('\\n');
   const loon结果 = Loon订阅配置文件热补丁(loon样本, 'https://example.com/sub?token=t&loon', 配置);
   assert.ok(typeof loon结果 === 'string' && loon结果.length > 0, 'Loon 热补丁返回非空');
   assert.ok(loon结果.includes('skip-cert-verify=true'), 'Loon 热补丁补齐 skip-cert-verify');
@@ -85,7 +85,7 @@ const TEST_BODY = `
     '[filter_remote]',
     'https://example.com/rule.txt, tag=ACL4SSR',
     '',
-  ].join('\n');
+  ].join('\\n');
   const quanx结果 = QuantumultX订阅配置文件热补丁(quanx样本, 'https://example.com/sub?token=t&quanx', 配置);
   assert.ok(typeof quanx结果 === 'string' && quanx结果.length > 0, 'QuantumultX 热补丁返回非空');
   assert.ok(quanx结果.includes('skip-cert-verify=true'), 'QuantumultX 热补丁补齐 skip-cert-verify');
