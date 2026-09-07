@@ -76,6 +76,23 @@
 | [`docs/M2-P0-CHANGE-ANALYSIS.md`](docs/M2-P0-CHANGE-ANALYSIS.md) | 改动清单 / 出站原理 / 用量增量 / 风控评估 |
 | [`docs/CF-COMPLIANCE-BOUNDARY.md`](docs/CF-COMPLIANCE-BOUNDARY.md) | CF 协议边界（§2.2.1(j)）/ Free 限额对照 / 90% 额度容量模型 |
 
+### 🗺️ 下一步迭代计划（已规划，暂缓执行）
+
+> 前置纪律：每次迭代前过 [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) 第三节 SOP；部署间隔 ≥5 分钟。
+
+| 优先级 | 项 | 内容 | 验收 |
+|---|---|---|---|
+| **P0** | 观察检查点 | T+24h / T+7d 复跑 M2-P0 真实流量验证：错误率、`[官方直连]` 日志成功率、子请求比 | 错误率 <1%；比率 <1.2；loadShed=0 |
+| **P0** | 安全治理 | `KEY` / `ADMIN` / `UUID` 迁移 `secret_text`（TOKEN 会轮换，客户端需重新订阅） | 无 plaintext 凭据 binding |
+| **P1** | H2 数据面测试 | VLESS/Trojan/SS 帧解析 golden 字节测试（纯函数，无需 mock）→ 连接选择逻辑 mock 测试（竞速/兜底/官方直连分支） | protocol + transport 关键分支有自动化覆盖 |
+| **P1** | H1 彻底重构（可选） | per-request 上下文对象替代全局变量（`log()` 签名变更 130+ 处） | 请求间状态零共享 |
+| **P2** | M2-P2 传输热路径 | 上行合包/下行聚合对照 cfnew v2.9.8c 移植（**须在 H2 测试就位后**） | loadShed 长期归零 |
+| **P2** | 订阅全内化 | clash/singbox/surge/loon/quanx 逐格式内部生成，最终删除 SUBAPI 外部依赖（cfnew 已验证可行） | 零外部转换器依赖 |
+| **决策点** | Free vs Paid | 日常水位持续 >50%（50k req/天）时评估升级 Paid（$5/月：10M 请求、CPU 30s、KV 10M 读） | 按实际水位决策 |
+| **持续** | 上游维护 | 每月 diff 上游 cmliu/edgetunnel 关键修复，手工移植 + golden 测试护航 | 安全修复不滞后 |
+
+> 架构硬伤修复排序详见 [`docs/ARCHITECTURE-LIMITS.md`](docs/ARCHITECTURE-LIMITS.md)（H1/H4 已完成，H2 为下一个代码主项）。
+
 ---
 
 ## 💡 快速部署
