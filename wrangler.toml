@@ -7,6 +7,8 @@ keep_vars = true
 [observability]
 enabled = true
 
-#[[kv_namespaces]]
-#binding = "KV"			#KV绑定名默认不可修改
-#id = ""				#KV数据库id
+# M2-P0 收尾修复：激活 KV 绑定（原为孤儿命名空间）。/login、/admin、/sub、
+# cfg:{host} 全量配置均依赖 env.KV，未绑定时这些路由全部跳过、直接落伪装页。
+[[kv_namespaces]]
+binding = "KV"
+id = "8f6efb8eac6741ba9ace4353946555ac"
