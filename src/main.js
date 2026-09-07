@@ -159,7 +159,8 @@ export default {
 		const url = new URL(请求URL文本);
 		const UA = request.headers.get('User-Agent') || 'null';
 		const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase(), contentType = (request.headers.get('content-type') || '').toLowerCase();
-		const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB, KV可用, 伪装页URL } = await 全局读取配置(env, request, url);
+		const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB, KV可用, 伪装页URL } = await 全局读取配置(env, request, url);
+		const 出站配置 = { 模式: 出站模式, 地址池: 官方直连地址池, 端口: 官方直连端口 };
 		const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 		const 访问路径 = url.pathname.slice(1).toLowerCase();
 		const 访问IP = request.headers.get('CF-Connecting-IP') || request.headers.get('True-Client-IP') || request.headers.get('X-Real-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Cluster-Client-IP') || '未知IP';
@@ -177,11 +178,11 @@ export default {
 				if (请求前8总和 === 目标前8总和 && 请求UUID.slice(-12) === 目标UUID.slice(-12)) return new Response(JSON.stringify({ Version: Number(String(Version).replace(/\D+/g, '')) }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 			}
 		} else if (管理员密码 && upgradeHeader === 'websocket') {// WebSocket代理
-			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底);
+			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底, 出站配置);
 			log(`[WebSocket] 命中请求: ${url.pathname}${url.search}`);
 			return await 处理WS请求(request, userID, url, 反代上下文);
 		} else if (管理员密码 && !访问路径.startsWith('admin/') && 访问路径 !== 'login' && request.method === 'POST') {// gRPC/叉HTTP代理
-			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底);
+			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底, 出站配置);
 			const { 头: 本机Padding头, 键: 本机Padding键 } = 获取叉HTTPPadding标识(userID);
 			const 命中叉HTTP特征 = !!request.headers.get(本机Padding头) || !!url.searchParams.get(本机Padding键);
 			if (!命中叉HTTP特征 && contentType.startsWith('application/grpc')) {
@@ -480,7 +481,7 @@ export default {
 						} else { // 订阅转换
 							const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅转换器目标(订阅类型)}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 今日订阅转换后端专属TOKEN + '&cnIspCode=' + 识别运营商(request) + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&list=${config_JSON.订阅转换配置.SUBLIST}&scv=${config_JSON.跳过证书验证}&xudp=${config_JSON.订阅转换配置.XUDP}&udp=${config_JSON.订阅转换配置.UDP}&tls13=${config_JSON.订阅转换配置.TLS13}&append_type=${config_JSON.订阅转换配置.APPEND_TYPE}&sort=${config_JSON.订阅转换配置.SORT}`;
 							try {
-								const response = await fetch(订阅转换URL, { headers: { 'User-Agent': 'Subconverter for ' + 订阅转换器目标(订阅类型) + ' edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' } });
+								const response = await fetch(订阅转换URL, { headers: { 'User-Agent': 'Subconverter for ' + 订阅转换器目标(订阅类型) + ' edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' }, signal: AbortSignal.timeout(10000) }); // M2-P0.5：订阅转换 10s 超时
 								if (response.ok) {
 									订阅内容 = await response.text();
 									if (订阅类型 === 'surge') 订阅内容 = Surge订阅配置文件热补丁(订阅内容, url.protocol + '//' + url.host + '/sub?token=' + 订阅TOKEN + '&surge', config_JSON);
@@ -528,13 +529,22 @@ export default {
 		}
 
 		if (伪装页URL === '1101') return new Response(await html1101(url.host, 访问IP), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+		// ============ M2-P0.6 无效请求拦截 ============
+		// 扫描器/探测器的典型特征是无浏览器 UA（空 / 'null' / 纯 bot 工具标识），
+		// 对这类请求且未命中任何功能路径时直接 404 短路：不反代伪装页、不消耗出站子请求。
+		// 正常浏览器（含 Mozilla 系 UA）仍走伪装页反代，行为不变。
+		const 非浏览器UA = !UA || UA === 'null' || (!ua是否浏览器(UA) && !upgradeHeader && !contentType.startsWith('application/grpc'));
+		if (非浏览器UA) {
+			log(`[拦截] 非浏览器请求短路: ${url.pathname}${url.search} | UA: ${UA} | IP: ${访问IP}`);
+			return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'no-store' } });
+		}
 		try {
 			const 反代URL = new URL(伪装页URL), 新请求头 = new Headers(request.headers);
 			新请求头.set('Host', 反代URL.host);
 			新请求头.set('Referer', 反代URL.origin);
 			新请求头.set('Origin', 反代URL.origin);
 			if (!新请求头.has('User-Agent') && UA && UA !== 'null') 新请求头.set('User-Agent', UA);
-			const 反代响应 = await fetch(反代URL.origin + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf });
+			const 反代响应 = await fetch(反代URL.origin + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf, signal: AbortSignal.timeout(8000) }); // M2-P0.5：伪装页反代 8s 超时，失败走 nginx 兜底
 			const 内容类型 = 反代响应.headers.get('content-type') || '';
 			// 只处理文本类型的响应
 			if (/text|javascript|json|xml/.test(内容类型)) {

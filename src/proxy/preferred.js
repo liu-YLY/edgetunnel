@@ -43,7 +43,7 @@ async function 生成随机IP(request, count = 16, 指定端口 = -1) {
 	const cfname = 运营商名称映射[运营商文件标识] || 'CF官方优选';
 	const cfport = [443, 2053, 2083, 2087, 2096, 8443];
 	let cidrList = [];
-	try { const res = await fetch(cidr_url); cidrList = res.ok ? await 整理成数组(await res.text()) : ['104.16.0.0/13'] } catch { cidrList = ['104.16.0.0/13'] }
+	try { const res = await fetch(cidr_url, { signal: AbortSignal.timeout(5000) }); cidrList = res.ok ? await 整理成数组(await res.text()) : ['104.16.0.0/13'] } catch { cidrList = ['104.16.0.0/13'] } // M2-P0.5：CIDR 拉取 5s 超时，失败回退默认段
 
 	const generateRandomIPFromCIDR = (cidr) => {
 		const [baseIP, prefixLength] = cidr.split('/'), prefix = parseInt(prefixLength), hostBits = 32 - prefix;
@@ -86,7 +86,8 @@ async function 获取优选订阅生成器数据(优选订阅生成器HOST) {
 
 	try {
 		const response = await fetch(优选订阅生成器URL, {
-			headers: { 'User-Agent': 'v2rayN/edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' }
+			headers: { 'User-Agent': 'v2rayN/edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' },
+			signal: AbortSignal.timeout(8000), // M2-P0.5：优选订阅生成器 8s 超时
 		});
 
 		if (!response.ok) {
@@ -325,16 +326,19 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 	return [Array.from(results), LINK数组, 需要订阅转换订阅URLs, Array.from(反代IP池)];
 }
 
-async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代兜底 = true) {
+async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代兜底 = true, 出站配置 = null) {
 	const { searchParams } = url;
 	const pathname = decodeURIComponent(url.pathname);
 	const pathLower = pathname.toLowerCase();
 	let 反代IP = 默认反代IP, 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {}, 启用反代兜底 = 默认反代兜底;
-	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底 };
+	// ============ M2-P0 出站配置透传（模式/官方地址池）============
+	// 模式默认 auto：官方地址池直连；region：由 env.出站模式 显式开启，wk 指定地区走旧 colo 反代域名模板。
+	const 出站模式 = 出站配置?.模式 || 'auto';
+	const 官方地址池 = Array.isArray(出站配置?.地址池) ? 出站配置.地址池 : [];
+	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底, 出站模式, 官方地址池 };
 	// ============ M1-P0 path 逐节点覆盖白名单（p/wk/rm/s）============
 	// 白名单外的查询参数一律忽略；p 与 wk 互斥：写 p 则地区匹配整体跳过。
-	// 说明：wk/rm 当前为预留字段——互斥与入参记录已生效，但"按地区选择出口"依赖
-	// 反代域名模板，将在 M2 出站官方直连化改造时一并接入消费点。
+	// M2-P0：wk 从预留字段转为端到端生效——region 模式下按 wk 生成旧 colo 反代域名模板；auto 模式忽略 wk 走官方直连。
 	const p覆盖 = searchParams.get('p');
 	const wk覆盖 = searchParams.get('wk');
 	const rm覆盖 = searchParams.get('rm');
@@ -343,9 +347,23 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 	const 写入了p = p覆盖 !== null;
 	反代上下文.跳过地区匹配 = 写入了p;
 	反代上下文.地区 = 写入了p ? null : wk覆盖;      // 地区覆盖（写 p 时置空，地区匹配跳过）
-	反代上下文.地区匹配 = 写入了p ? false : ['1', 'true', 'yes', 'on'].includes(rm覆盖); // 地区匹配开关
+	// M2-P0 rm 语义修正：rm=no 强制关闭地区匹配；缺省/yes/true/on 视为开启（由出站模式下决定是否真正生效）
+	反代上下文.地区匹配 = 写入了p ? false : (rm覆盖 === 'no' ? false : true);
 	if (写入了p && p覆盖)反代IP = p覆盖;           // p（ProxyIP）：直接覆盖连接级反代IP，并关闭兜底
 	if (写入了p)启用反代兜底 = false;
+	// ============ M2-P0-2 wk 消费：region 模式下 wk 指定地区出口 ============
+	// 仅当未写 p（互斥）且 出站模式==='region' 且 wk 有效时启用旧 colo 模板；
+	// auto 模式保持 反代IP 为空 -> forward 走官方直连；rm=no 时地区匹配整体关闭。
+	if (!写入了p && 出站模式 === 'region' && 反代上下文.地区匹配 && 反代上下文.地区) {
+		const wk地区 = String(反代上下文.地区).toLowerCase().replace(/[^a-z0-9]/g, '');
+		if (wk地区) {
+			反代IP = `${wk地区}.${特征码字典[0]}.${特征码字典[1]}SsSs.nEt`;
+			启用反代兜底 = true; // 地区模板不可控，保留直连兜底（与旧版默认一致）
+			log(`[出站] region 模式：wk=${wk地区} -> 地区反代模板 ${反代IP}`);
+		}
+	} else if (!写入了p && 出站模式 === 'auto' && 反代上下文.地区) {
+		log(`[出站] auto 模式忽略 wk=${反代上下文.地区}（官方直连，不依赖地区反代域名；如需地区出口请设置 env.出站模式=region）`);
+	}
 	const 保存快照 = () => {
 		反代上下文.反代IP = 反代IP;
 		反代上下文.代理类型 = 启用SOCKS5反代;

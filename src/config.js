@@ -1,4 +1,23 @@
 /*# anchor: 原 _worker.js L5587-5832 */
+///////////////////////////////////////////////////////M2-P0 官方直连地址池///////////////////////////////////////////////////////
+// 内置 Cloudflare 官方 IPv4 地址（官方段：162.158.0.0/15、172.64.0.0/13），
+// 清单与 byJoey/cfnew v3.0 生产验证一致（同平台同流量 30 天 0 错误基线）。
+// CF 为任播网络：同一地址在不同位置落到不同机房，无需按地区区分。
+// 运行时零外部 DNS/API 依赖；KV 可通过 出站.官方地址列表 整体覆写。
+const 官方直连地址池 = [
+	'172.71.218.190', // 172.64.0.0/13
+	'162.158.228.87', // 162.158.0.0/15
+	'162.158.189.134', // 162.158.0.0/15
+	'162.158.26.63', // 162.158.0.0/15
+	'162.158.25.86', // 162.158.0.0/15
+	'162.158.29.216', // 162.158.0.0/15
+	'162.158.218.160', // 162.158.0.0/15
+	'162.158.227.214', // 162.158.0.0/15
+	'172.69.118.198', // 172.64.0.0/13
+	'172.69.119.150', // 172.64.0.0/13
+];
+const 官方直连端口 = 443;
+
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
 	const _p = 特征码字典[0];
 	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
@@ -234,7 +253,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 			const CF_JSON = JSON.parse(CF_TXT);
 			if (CF_JSON.UsageAPI) {
 				try {
-					const response = await fetch(CF_JSON.UsageAPI);
+					const response = await fetch(CF_JSON.UsageAPI, { signal: AbortSignal.timeout(8000) }); // M2-P0.5：用量查询 8s 超时，防上游卡死耗尽 CPU
 					const Usage = await response.json();
 					config_JSON.CF.Usage = Usage;
 				} catch (err) {
@@ -274,11 +293,19 @@ async function 全局读取配置(env, request, url) {
 	反代并发拨号数 = Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 反代并发拨号数);
 	TCP并发拨号数 = Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || TCP并发拨号数);
 	if (!env.TCP_CONCURRENT_DIAL && TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
-	let 默认反代IP = (`${request.cf.colo}.${特征码字典[0]}.${特征码字典[1]}SsSs.nEt`).toLowerCase(), 默认反代兜底 = true;
+	// ============ M2-P0 出站模式三层选择 ============
+	// auto（默认）：内置官方地址池直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
+	// manual：env.PROXYIP 手填（随机取一 + 兜底关闭，与旧版行为逐字一致）；
+	// region：env.出站模式/EGRESS_MODE 显式设为 region 时，path wk 指定地区走旧 colo 反代域名模板。
+	let 出站模式 = 'auto', 默认反代IP = '', 默认反代兜底 = true;
+	const env出站模式 = String(env.出站模式 || env.EGRESS_MODE || '').toLowerCase();
 	if (env.PROXYIP) {
+		出站模式 = 'manual';
 		const proxyIPs = await 整理成数组(env.PROXYIP);
 		默认反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
 		默认反代兜底 = false;
+	} else if (env出站模式 === 'region') {
+		出站模式 = 'region'; // 默认反代IP 留空，由 path wk 在 反代参数获取 中消费；无 wk 时退化为官方直连
 	}
 	if (缓存SOCKS5白名单 === null) {
 		if (env.GO2SOCKS5) SOCKS5白名单 = [...new Set(SOCKS5白名单.concat(await 整理成数组(env.GO2SOCKS5)))];
@@ -291,7 +318,7 @@ async function 全局读取配置(env, request, url) {
 		if (伪装页URL.toLowerCase().startsWith('http://')) 伪装页URL = 'https://' + 伪装页URL.substring(7);
 		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
 	}
-	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
 }
 
 ///////////////////////////////////////////////////////M1-P0 KV 全量配置深合并工具///////////////////////////////////////////////////////

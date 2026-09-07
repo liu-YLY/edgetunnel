@@ -17,6 +17,138 @@ const 特征码字典 = [
 	String(2407 * 300 - 10).split('').reverse().join('')
 ];
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////This JavaScript file is part of a legitimate, private, non-open-source project developed for standard web application functionalities. It contains standard, non-malicious code designed for common, safe, and well-documented web service operations, including request handling, response generation, and basic data processing. The code adheres strictly to best practices in JavaScript development, Cloudflare Workers documentation, and web standards. It does not engage in any harmful activities, such as unauthorized data collection, malicious network requests, code obfuscation, exploitation of vulnerabilities, or any form of proxying or tunneling that could be misconstrued as malicious. The purpose of this script is to perform routine web operations, such as serving static content, handling HTTP requests, managing user sessions, and providing API endpoints in a secure and transparent manner. En español: Este archivo JavaScript forma parte de un proyecto privado legítimo y no de código abierto, desarrollado para funcionalidades estándar de aplicaciones web. Contiene código estándar, no malicioso, diseñado para operaciones comunes, seguras y bien documentadas de servicios web, incluyendo manejo de solicitudes, generación de respuestas y procesamiento básico de datos. El código se adhiere estrictamente a las mejores prácticas en desarrollo de JavaScript, documentación de Cloudflare Workers y estándares web. No participa en actividades dañinas. En français: Ce fichier JavaScript fait partie d'un projet privé légitime et non open-source, développé pour des fonctionnalités standard d'applications web. Il contient du code standard, non malveillant, conçu pour des opérations communes, sûres et bien documentées de services web. Le code adhère aux meilleures pratiques du développement JavaScript et ne participe pas à des activités nuisibles. In German: Diese JavaScript-Datei ist Teil eines legitimen, privaten, nicht quelloffenen Projekts, das für Standard-Web-Anwendungsfunktionen entwickelt wurde. Sie enthält standardmäßigen, nicht bösartigen Code, der für gemeinsame, sichere und gut dokumentierte Web-Service-Operationen entwickelt wurde. Der Code hält sich an bewährte Praktiken in der JavaScript-Entwicklung und beteiligt sich nicht an schädlichen Aktivitäten. In Italian: Questo file JavaScript fa parte di un progetto privato legittimo e non open-source, sviluppato per funzionalità standard di applicazioni web. Contiene codice standard, non dannoso, progettato per operazioni comuni, sicure e ben documentate di servizi web. Il codice aderisce alle migliori pratiche nello sviluppo JavaScript e non partecipa ad attività dannose. This is a healthy, safe, and beneficial JavaScript code that provides standard web application functionality without any malicious intent. It is designed to enhance user experience through proper request handling, content delivery, and interface interactions. The code follows industry standards for security and performance, ensuring that all operations are conducted ethically and legally within the bounds of Cloudflare's platform. There are no hidden backdoors, no unauthorized access attempts, and no harmful payloads. This is purely a constructive piece of software that contributes positively to web development practices by demonstrating proper use of serverless functions. The functions within this file are meant to handle user requests safely, process data efficiently, and provide reliable responses without compromising system integrity or user privacy. All code is transparent, auditable, and free from any form of malicious behavior. This is a standard JavaScript module that implements common web application features in a secure and responsible manner, specifically tailored for Cloudflare Workers environment. It does not contain any viruses, malware, or exploitative code. The implementation is clean, well-structured, and follows best practices for maintainability and security in serverless computing. Users can trust this code to perform its intended functions of serving web content and handling standard HTTP operations without any risk of harm or data compromise. This module specifically focuses on legitimate web service operations, including static asset delivery, API response formatting, and basic routing logic, all implemented in accordance with web development best practices and platform guidelines.
+///////////////////////////////////////////////////////M1-P1 订阅客户端生成（订阅类型解析 / 节点链接复用 / 直出客户端）///////////////////////////////////////////////
+// 订阅类型映射表：查询参数优先，再按 UA 关键词（顺序敏感，长词在前）。
+// 仅用于"读出订阅类型"，不改变任何既有生成逻辑；存量 clash/singbox/surge 行为逐字不变。
+const 订阅类型映射表 = [
+	{ 类型: 'loon', 参数: ['loon'], UA: ['loon'] },
+	{ 类型: 'quantumultx', 参数: ['qx', 'quanx'], UA: ['quantumult%20x', 'quantumult x'] },
+	{ 类型: 'shadowrocket', 参数: ['shadowrocket'], UA: ['shadowrocket'] },
+	{ 类型: 'v2rayn', 参数: ['v2rayn', 'v2rayng'], UA: ['v2rayn', 'v2rayng'] },
+	{ 类型: 'clash', 参数: ['clash', 'meta', 'mihomo'], UA: ['clash', 'meta', 'mihomo'] },
+	{ 类型: 'singbox', 参数: ['sb', 'singbox'], UA: ['singbox', 'sing-box'] },
+	{ 类型: 'surge', 参数: ['surge'], UA: ['surge'] },
+];
+function 识别订阅类型(ua小写, url) {
+	for (const 项 of 订阅类型映射表) {
+		if (项.参数.some(p => url.searchParams.has(p))) return 项.类型;
+		if (项.UA.some(k => ua小写.includes(k))) return 项.类型;
+	}
+	return 'mixed'; // 默认保持旧行为（与重构前 /sub 默认 mixed 一致）
+}
+// 订阅类型 → 转换器 target（SUBAPI）名映射（结构简单的客户端 shadowrocket/v2rayn 走直出，不进入转换器）
+function 订阅转换器目标(订阅类型) {
+	if (订阅类型 === 'surge') return 'surge&ver=4';
+	if (订阅类型 === 'quantumultx') return 'quanx'; // 转换器目标名为 quanx
+	return 订阅类型; // loon / clash / singbox / 显式 target 参数
+}
+// 获取订阅节点列表：复用原有"本地生成 / 优选订阅生成器"两条数据链路，供 mixed 与直出客户端共用。
+async function 获取订阅节点列表(config_JSON, url, request, env) {
+	let 完整优选IP = [], 其他节点LINK = '', 反代IP池 = [];
+	if (!url.searchParams.has('sub') && config_JSON.优选订阅生成.local) { // 本地生成订阅
+		const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (
+			await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
+		)[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (
+			await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
+		)[0];
+		const 优选API = [], 优选IP = [], 其他节点 = [];
+		for (const 元素 of 完整优选列表) {
+			if (元素.toLowerCase().startsWith('sub://')) {
+				优选API.push(元素);
+			} else {
+				const 备注位置 = 元素.indexOf('#');
+				const 地址部分 = 备注位置 > -1 ? 元素.slice(0, 备注位置) : 元素;
+				const 备注部分 = 备注位置 > -1 ? 元素.slice(备注位置) : '';
+				const subMatch = 元素.match(/sub\s*=\s*([^\s&#]+)/i);
+				if (subMatch && subMatch[1].trim().includes('.')) {
+					const 优选IP作为反代IP = 元素.toLowerCase().includes('proxyip=true');
+					if (优选IP作为反代IP) 优选API.push('sub://' + subMatch[1].trim() + "?proxyip=true" + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
+					else 优选API.push('sub://' + subMatch[1].trim() + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
+				} else if (地址部分.toLowerCase().startsWith('https://')) {
+					优选API.push(元素);
+				} else if (地址部分.toLowerCase().includes('://')) {
+					if (元素.includes('#')) {
+						const 地址备注分离 = 元素.split('#');
+						其他节点.push(地址备注分离[0] + '#' + encodeURIComponent(decodeURIComponent(地址备注分离[1])));
+					} else 其他节点.push(元素);
+				} else {
+					if (地址部分.includes('*')) {
+						优选IP.push(替换星号为随机字符(地址部分) + 备注部分);
+					} else 优选IP.push(元素);
+				}
+			}
+		}
+		const 请求优选API内容 = await 请求优选API(优选API, '443');
+		const 合并其他节点数组 = [...new Set(其他节点.concat(请求优选API内容[1]))];
+		其他节点LINK = 合并其他节点数组.length > 0 ? 合并其他节点数组.join('\n') + '\n' : '';
+		const 优选API的IP = 请求优选API内容[0];
+		反代IP池 = 请求优选API内容[3] || [];
+		完整优选IP = [...new Set(优选IP.concat(优选API的IP))];
+	} else { // 优选订阅生成器
+		let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
+		const [优选生成器IP数组, 优选生成器其他节点] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
+		完整优选IP = 完整优选IP.concat(优选生成器IP数组);
+		其他节点LINK += 优选生成器其他节点;
+	}
+	return { 完整优选IP, 其他节点LINK, 反代IP池 };
+}
+// 生成节点链接文本：复用原有"协议类型://..." 链接生成器（LINK 系列），供 mixed 与直出客户端共用，勿重写。
+function 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数) {
+	const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
+	return 其他节点LINK + 完整优选IP.map(原始地址 => {
+		// 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
+		// 示例:
+		//   - 域名: hj.xmm1993.top:2096#备注 或 example.com
+		//   - IPv4: 166.0.188.128:443#Los Angeles 或 166.0.188.128
+		//   - IPv6: [2606:4700::]:443#CMCC 或 [2606:4700::]
+		const regex = /^(\[[\da-fA-F:]+\]|[\d.]+|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)(?::(\d+))?(?:#(.+))?$/;
+		const match = 原始地址.match(regex);
+
+		let 节点地址, 节点端口 = "443", 节点备注;
+
+		if (match) {
+			节点地址 = match[1];  // IP地址或域名(可能带方括号)
+			节点端口 = match[2] ? match[2] : '443';  // 端口默认443，SS noTLS在生成链接时再映射
+			节点备注 = match[3] || 节点地址;  // 备注,默认为地址本身
+		} else {
+			// 不规范的格式，跳过处理返回null
+			console.warn(`[订阅内容] 不规范的IP格式已忽略: ${原始地址}`);
+			return null;
+		}
+
+		let 完整节点路径 = config_JSON.完整节点路径;
+
+		const 链式代理匹配 = 节点备注.match(/\$(socks5|http|https|turn|sstp):\/\/([^#\s]+)/i);
+		if (链式代理匹配) {
+			try {
+				const 代理协议 = 链式代理匹配[1].toLowerCase(), 代理参数 = 链式代理匹配[2];
+				const 链式代理数据 = { type: 代理协议, ...获取SOCKS5账号(代理参数, 获取代理默认端口(代理协议)) };
+				完整节点路径 = `/video/${base64SecretEncode(JSON.stringify(链式代理数据), userID) + (config_JSON.启用0RTT ? '?ed=2560' : '')}`;
+				节点备注 = 节点备注.replace(链式代理匹配[0], '').trim() || 节点地址;
+			} catch (error) {
+				console.warn(`[订阅内容] 链式代理解析失败，已忽略该指令: ${链式代理匹配[0]} (${error && error.message ? error.message : error})`);
+			}
+		} else if (反代IP池.length > 0) {
+			const 匹配到的反代IP = 反代IP池.find(p => p.includes(节点地址));
+			if (匹配到的反代IP) 完整节点路径 = (`${config_JSON.PATH}/proxyip=${匹配到的反代IP}`).replace(/\/\//g, '/') + (config_JSON.启用0RTT ? '?ed=2560' : '');
+		}
+		if (isLoonOrSurge) 完整节点路径 = 完整节点路径.replace(/,/g, '%2C');
+
+		if (协议类型 === 'ss' && !作为优选订阅生成器) {
+			if (!config_JSON.SS.TLS) {
+				const TLS端口 = [443, 2053, 2083, 2087, 2096, 8443];
+				const NOTLS端口 = [80, 2052, 2082, 2086, 2095, 8080];
+				节点端口 = String(NOTLS端口[TLS端口.indexOf(Number(节点端口))] ?? 节点端口);
+			}
+			完整节点路径 = (完整节点路径.includes('?') ? 完整节点路径.replace('?', '?enc=' + config_JSON.SS.加密方式 + '&') : (完整节点路径 + '?enc=' + config_JSON.SS.加密方式)).replace(/([=,])/g, '\\$1');
+			if (!isSubConverterRequest) 完整节点路径 = 完整节点路径 + ';mux=0';
+			return `${协议类型}://${btoa(config_JSON.SS.加密方式 + ':00000000-0000-4000-8000-000000000000')}@${节点地址}:${节点端口}?plugin=v2${encodeURIComponent('ray-plugin;mode=websocket;host=example.com;path=' + (config_JSON.随机路径 ? 随机路径(完整节点路径) : 完整节点路径) + (config_JSON.SS.TLS ? ';tls' : '')) + ECHLINK参数 + TLS分片参数}#${encodeURIComponent(节点备注)}`;
+		} else {
+			const 传输路径参数值 = 获取传输路径参数值(config_JSON, 完整节点路径, 作为优选订阅生成器);
+			return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=example.com&fp=${config_JSON.Fingerprint}&sni=example.com&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none#${encodeURIComponent(节点备注)}`;
+		}
+	}).filter(item => item !== null).join('\n');
+}
 export default {
 	async fetch(request, env, ctx) {
 		let 请求URL文本 = request.url.replace(/%5[Cc]/g, '').replace(/\\/g, '');
@@ -29,7 +161,8 @@ export default {
 		const url = new URL(请求URL文本);
 		const UA = request.headers.get('User-Agent') || 'null';
 		const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase(), contentType = (request.headers.get('content-type') || '').toLowerCase();
-		const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB, KV可用, 伪装页URL } = await 全局读取配置(env, request, url);
+		const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB, KV可用, 伪装页URL } = await 全局读取配置(env, request, url);
+		const 出站配置 = { 模式: 出站模式, 地址池: 官方直连地址池, 端口: 官方直连端口 };
 		const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 		const 访问路径 = url.pathname.slice(1).toLowerCase();
 		const 访问IP = request.headers.get('CF-Connecting-IP') || request.headers.get('True-Client-IP') || request.headers.get('X-Real-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Cluster-Client-IP') || '未知IP';
@@ -47,11 +180,11 @@ export default {
 				if (请求前8总和 === 目标前8总和 && 请求UUID.slice(-12) === 目标UUID.slice(-12)) return new Response(JSON.stringify({ Version: Number(String(Version).replace(/\D+/g, '')) }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 			}
 		} else if (管理员密码 && upgradeHeader === 'websocket') {// WebSocket代理
-			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底);
+			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底, 出站配置);
 			log(`[WebSocket] 命中请求: ${url.pathname}${url.search}`);
 			return await 处理WS请求(request, userID, url, 反代上下文);
 		} else if (管理员密码 && !访问路径.startsWith('admin/') && 访问路径 !== 'login' && request.method === 'POST') {// gRPC/叉HTTP代理
-			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底);
+			const 反代上下文 = await 反代参数获取(url, userID, 默认反代IP, 默认反代兜底, 出站配置);
 			const { 头: 本机Padding头, 键: 本机Padding键 } = 获取叉HTTPPadding标识(userID);
 			const 命中叉HTTP特征 = !!request.headers.get(本机Padding头) || !!url.searchParams.get(本机Padding键);
 			if (!命中叉HTTP特征 && contentType.startsWith('application/grpc')) {
@@ -328,133 +461,34 @@ export default {
 							? 'mixed'
 							: url.searchParams.has('target')
 								? url.searchParams.get('target')
-								: url.searchParams.has('clash') || ua.includes('clash') || ua.includes('meta') || ua.includes('mihomo')
-									? 'clash'
-									: url.searchParams.has('sb') || url.searchParams.has('singbox') || ua.includes('singbox') || ua.includes('sing-box')
-										? 'singbox'
-										: url.searchParams.has('surge') || ua.includes('surge')
-											? 'surge&ver=4'
-											: url.searchParams.has('quanx') || ua.includes('quantumult')
-												? 'quanx'
-												: url.searchParams.has('loon') || ua.includes('loon')
-													? 'loon'
-													: 'mixed';
+								: 识别订阅类型(ua, url);
 
 						if (!ua.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
 						const 协议类型 = ((url.searchParams.has('surge') || ua.includes('surge')) && config_JSON.协议类型 !== 'ss') ? 'tro' + 'jan' : config_JSON.协议类型;
 						let 订阅内容 = '';
 						if (订阅类型 === 'mixed') {
 							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
-							let 完整优选IP = [], 其他节点LINK = '', 反代IP池 = [];
-
-							if (!url.searchParams.has('sub') && config_JSON.优选订阅生成.local) { // 本地生成订阅
-								const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (
-									await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-								)[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (
-									await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-								)[0];
-								const 优选API = [], 优选IP = [], 其他节点 = [];
-								for (const 元素 of 完整优选列表) {
-									if (元素.toLowerCase().startsWith('sub://')) {
-										优选API.push(元素);
-									} else {
-										const 备注位置 = 元素.indexOf('#');
-										const 地址部分 = 备注位置 > -1 ? 元素.slice(0, 备注位置) : 元素;
-										const 备注部分 = 备注位置 > -1 ? 元素.slice(备注位置) : '';
-										const subMatch = 元素.match(/sub\s*=\s*([^\s&#]+)/i);
-										if (subMatch && subMatch[1].trim().includes('.')) {
-											const 优选IP作为反代IP = 元素.toLowerCase().includes('proxyip=true');
-											if (优选IP作为反代IP) 优选API.push('sub://' + subMatch[1].trim() + "?proxyip=true" + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
-											else 优选API.push('sub://' + subMatch[1].trim() + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
-										} else if (地址部分.toLowerCase().startsWith('https://')) {
-											优选API.push(元素);
-										} else if (地址部分.toLowerCase().includes('://')) {
-											if (元素.includes('#')) {
-												const 地址备注分离 = 元素.split('#');
-												其他节点.push(地址备注分离[0] + '#' + encodeURIComponent(decodeURIComponent(地址备注分离[1])));
-											} else 其他节点.push(元素);
-										} else {
-											if (地址部分.includes('*')) {
-												优选IP.push(替换星号为随机字符(地址部分) + 备注部分);
-											} else 优选IP.push(元素);
-										}
-									}
-								}
-								const 请求优选API内容 = await 请求优选API(优选API, '443');
-								const 合并其他节点数组 = [...new Set(其他节点.concat(请求优选API内容[1]))];
-								其他节点LINK = 合并其他节点数组.length > 0 ? 合并其他节点数组.join('\n') + '\n' : '';
-								const 优选API的IP = 请求优选API内容[0];
-								反代IP池 = 请求优选API内容[3] || [];
-								完整优选IP = [...new Set(优选IP.concat(优选API的IP))];
-							} else { // 优选订阅生成器
-								let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
-								const [优选生成器IP数组, 优选生成器其他节点] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
-								完整优选IP = 完整优选IP.concat(优选生成器IP数组);
-								其他节点LINK += 优选生成器其他节点;
-							}
+							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
 							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
 							const isLoonOrSurge = ua.includes('loon') || ua.includes('surge');
-							const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
-							订阅内容 = 其他节点LINK + 完整优选IP.map(原始地址 => {
-								// 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
-								// 示例:
-								//   - 域名: hj.xmm1993.top:2096#备注 或 example.com
-								//   - IPv4: 166.0.188.128:443#Los Angeles 或 166.0.188.128
-								//   - IPv6: [2606:4700::]:443#CMCC 或 [2606:4700::]
-								const regex = /^(\[[\da-fA-F:]+\]|[\d.]+|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)(?::(\d+))?(?:#(.+))?$/;
-								const match = 原始地址.match(regex);
-
-								let 节点地址, 节点端口 = "443", 节点备注;
-
-								if (match) {
-									节点地址 = match[1];  // IP地址或域名(可能带方括号)
-									节点端口 = match[2] ? match[2] : '443';  // 端口默认443，SS noTLS在生成链接时再映射
-									节点备注 = match[3] || 节点地址;  // 备注,默认为地址本身
-								} else {
-									// 不规范的格式，跳过处理返回null
-									console.warn(`[订阅内容] 不规范的IP格式已忽略: ${原始地址}`);
-									return null;
-								}
-
-								let 完整节点路径 = config_JSON.完整节点路径;
-
-								const 链式代理匹配 = 节点备注.match(/\$(socks5|http|https|turn|sstp):\/\/([^#\s]+)/i);
-								if (链式代理匹配) {
-									try {
-										const 代理协议 = 链式代理匹配[1].toLowerCase(), 代理参数 = 链式代理匹配[2];
-										const 链式代理数据 = { type: 代理协议, ...获取SOCKS5账号(代理参数, 获取代理默认端口(代理协议)) };
-										完整节点路径 = `/video/${base64SecretEncode(JSON.stringify(链式代理数据), userID) + (config_JSON.启用0RTT ? '?ed=2560' : '')}`;
-										节点备注 = 节点备注.replace(链式代理匹配[0], '').trim() || 节点地址;
-									} catch (error) {
-										console.warn(`[订阅内容] 链式代理解析失败，已忽略该指令: ${链式代理匹配[0]} (${error && error.message ? error.message : error})`);
-									}
-								} else if (反代IP池.length > 0) {
-									const 匹配到的反代IP = 反代IP池.find(p => p.includes(节点地址));
-									if (匹配到的反代IP) 完整节点路径 = (`${config_JSON.PATH}/proxyip=${匹配到的反代IP}`).replace(/\/\//g, '/') + (config_JSON.启用0RTT ? '?ed=2560' : '');
-								}
-								if (isLoonOrSurge) 完整节点路径 = 完整节点路径.replace(/,/g, '%2C');
-
-								if (协议类型 === 'ss' && !作为优选订阅生成器) {
-									if (!config_JSON.SS.TLS) {
-										const TLS端口 = [443, 2053, 2083, 2087, 2096, 8443];
-										const NOTLS端口 = [80, 2052, 2082, 2086, 2095, 8080];
-										节点端口 = String(NOTLS端口[TLS端口.indexOf(Number(节点端口))] ?? 节点端口);
-									}
-									完整节点路径 = (完整节点路径.includes('?') ? 完整节点路径.replace('?', '?enc=' + config_JSON.SS.加密方式 + '&') : (完整节点路径 + '?enc=' + config_JSON.SS.加密方式)).replace(/([=,])/g, '\\$1');
-									if (!isSubConverterRequest) 完整节点路径 = 完整节点路径 + ';mux=0';
-									return `${协议类型}://${btoa(config_JSON.SS.加密方式 + ':00000000-0000-4000-8000-000000000000')}@${节点地址}:${节点端口}?plugin=v2${encodeURIComponent('ray-plugin;mode=websocket;host=example.com;path=' + (config_JSON.随机路径 ? 随机路径(完整节点路径) : 完整节点路径) + (config_JSON.SS.TLS ? ';tls' : '')) + ECHLINK参数 + TLS分片参数}#${encodeURIComponent(节点备注)}`;
-								} else {
-									const 传输路径参数值 = 获取传输路径参数值(config_JSON, 完整节点路径, 作为优选订阅生成器);
-									return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=example.com&fp=${config_JSON.Fingerprint}&sni=example.com&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none#${encodeURIComponent(节点备注)}`;
-								}
-							}).filter(item => item !== null).join('\n');
+							订阅内容 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
+						} else if (订阅类型 === 'shadowrocket' || 订阅类型 === 'v2rayn') { // 直出明文订阅（零转换器依赖，复用节点链接生成器）
+							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
+							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
+							const 链接文本 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, false, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
+							订阅内容 = 订阅类型 === 'shadowrocket'
+								? 生成Shadowrocket订阅(链接文本, config_JSON.完整节点路径, config_JSON)
+								: 生成V2rayN订阅(链接文本, config_JSON.完整节点路径, config_JSON);
 						} else { // 订阅转换
-							const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅类型}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 今日订阅转换后端专属TOKEN + '&cnIspCode=' + 识别运营商(request) + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&list=${config_JSON.订阅转换配置.SUBLIST}&scv=${config_JSON.跳过证书验证}&xudp=${config_JSON.订阅转换配置.XUDP}&udp=${config_JSON.订阅转换配置.UDP}&tls13=${config_JSON.订阅转换配置.TLS13}&append_type=${config_JSON.订阅转换配置.APPEND_TYPE}&sort=${config_JSON.订阅转换配置.SORT}`;
+							const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅转换器目标(订阅类型)}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 今日订阅转换后端专属TOKEN + '&cnIspCode=' + 识别运营商(request) + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&list=${config_JSON.订阅转换配置.SUBLIST}&scv=${config_JSON.跳过证书验证}&xudp=${config_JSON.订阅转换配置.XUDP}&udp=${config_JSON.订阅转换配置.UDP}&tls13=${config_JSON.订阅转换配置.TLS13}&append_type=${config_JSON.订阅转换配置.APPEND_TYPE}&sort=${config_JSON.订阅转换配置.SORT}`;
 							try {
-								const response = await fetch(订阅转换URL, { headers: { 'User-Agent': 'Subconverter for ' + 订阅类型 + ' edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' } });
+								const response = await fetch(订阅转换URL, { headers: { 'User-Agent': 'Subconverter for ' + 订阅转换器目标(订阅类型) + ' edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' }, signal: AbortSignal.timeout(10000) }); // M2-P0.5：订阅转换 10s 超时
 								if (response.ok) {
 									订阅内容 = await response.text();
-									if (url.searchParams.has('surge') || ua.includes('surge')) 订阅内容 = Surge订阅配置文件热补丁(订阅内容, url.protocol + '//' + url.host + '/sub?token=' + 订阅TOKEN + '&surge', config_JSON);
+									if (订阅类型 === 'surge') 订阅内容 = Surge订阅配置文件热补丁(订阅内容, url.protocol + '//' + url.host + '/sub?token=' + 订阅TOKEN + '&surge', config_JSON);
+									else if (订阅类型 === 'loon') 订阅内容 = Loon订阅配置文件热补丁(订阅内容, url.protocol + '//' + url.host + '/sub?token=' + 订阅TOKEN + '&loon', config_JSON);
+									else if (订阅类型 === 'quantumultx') 订阅内容 = QuantumultX订阅配置文件热补丁(订阅内容, url.protocol + '//' + url.host + '/sub?token=' + 订阅TOKEN + '&quanx', config_JSON);
 								} else return new Response('订阅转换后端异常：' + response.statusText, { status: response.status });
 							} catch (error) {
 								return new Response('订阅转换后端异常：' + error.message, { status: 403 });
@@ -497,13 +531,22 @@ export default {
 		}
 
 		if (伪装页URL === '1101') return new Response(await html1101(url.host, 访问IP), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+		// ============ M2-P0.6 无效请求拦截 ============
+		// 扫描器/探测器的典型特征是无浏览器 UA（空 / 'null' / 纯 bot 工具标识），
+		// 对这类请求且未命中任何功能路径时直接 404 短路：不反代伪装页、不消耗出站子请求。
+		// 正常浏览器（含 Mozilla 系 UA）仍走伪装页反代，行为不变。
+		const 非浏览器UA = !UA || UA === 'null' || (!ua是否浏览器(UA) && !upgradeHeader && !contentType.startsWith('application/grpc'));
+		if (非浏览器UA) {
+			log(`[拦截] 非浏览器请求短路: ${url.pathname}${url.search} | UA: ${UA} | IP: ${访问IP}`);
+			return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'Cache-Control': 'no-store' } });
+		}
 		try {
 			const 反代URL = new URL(伪装页URL), 新请求头 = new Headers(request.headers);
 			新请求头.set('Host', 反代URL.host);
 			新请求头.set('Referer', 反代URL.origin);
 			新请求头.set('Origin', 反代URL.origin);
 			if (!新请求头.has('User-Agent') && UA && UA !== 'null') 新请求头.set('User-Agent', UA);
-			const 反代响应 = await fetch(反代URL.origin + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf });
+			const 反代响应 = await fetch(反代URL.origin + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf, signal: AbortSignal.timeout(8000) }); // M2-P0.5：伪装页反代 8s 超时，失败走 nginx 兜底
 			const 内容类型 = 反代响应.headers.get('content-type') || '';
 			// 只处理文本类型的响应
 			if (/text|javascript|json|xml/.test(内容类型)) {
@@ -2364,6 +2407,43 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 		}
 	}
 
+	// ============ M2-P0-1 auto 模式：官方地址多候选直连 ============
+	// 语义与 connectProxyIP 一致（连接候选 -> 写首包），仅候选来源换成内置官方 IP 池：
+	// 每次打乱顺序（避免固定第一个被墙后全灭），复用 并发打开候选连接 分批竞速，
+	// 全部失败后按 反代兜底 开关回落 connectDirect 原始目标或抛错。
+	async function 连接官方直连地址(目标域名, 目标端口, data = null, 官方地址池 = [], 启用兜底 = true) {
+		if (!官方地址池?.length) return connectDirect(目标域名, 目标端口, data, false);
+		const 候选副本 = [...官方地址池];
+		for (let i = 候选副本.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[候选副本[i], 候选副本[j]] = [候选副本[j], 候选副本[i]];
+		}
+		const 实际并发数 = Math.max(1, Math.floor(Number(反代并发拨号数) || 1));
+		for (let i = 0; i < 候选副本.length; i += 实际并发数) {
+			const 候选列表 = [];
+			for (let j = 0; j < 实际并发数 && i + j < 候选副本.length; j++) {
+				候选列表.push({ hostname: 候选副本[i + j], port: 官方直连端口, index: i + j });
+			}
+			let socket = null, candidate = null;
+			try {
+				log(`[官方直连] 并发尝试 ${候选列表.length} 路: ${候选列表.map(候选 => `${候选.hostname}:${候选.port}`).join(', ')} | 目标: ${目标域名}:${目标端口}`);
+				const 连接结果 = await 并发打开候选连接(候选列表);
+				socket = 连接结果.socket;
+				candidate = 连接结果.candidate;
+				await 写入首包(socket, data);
+				log(`[官方直连] 成功连接到: ${candidate.hostname}:${candidate.port} (索引: ${candidate.index})`);
+				反代数组索引 = candidate.index;
+				return socket;
+			} catch (err) {
+				try { socket?.close?.() } catch (e) { }
+				log(`[官方直连] 本批连接失败: ${err.message || err}`);
+			}
+		}
+		log(`[官方直连] 全部 ${候选副本.length} 个官方地址连接失败${启用兜底 ? '，回落直连原始目标' : ''}`);
+		if (启用兜底) return connectDirect(目标域名, 目标端口, data, false);
+		throw new Error(`[官方直连] 全部 ${候选副本.length} 个官方地址连接失败，且未启用兜底，连接终止。`);
+	}
+
 	async function connecttoPry(允许发送首包 = true) {
 		if (remoteConnWrapper.connectingPromise) {
 			await remoteConnWrapper.connectingPromise;
@@ -2418,9 +2498,16 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 						finally { try { writer.releaseLock() } catch (e) { } }
 					}
 				} else {
-					log(`[反代连接] 代理到: ${host}:${portNum}`);
-					const 所有反代数组 = await 解析地址端口(ctx反代IP, host, yourUUID);
-					newSocket = await connectProxyIP(`${特征码字典[0]}.tp1.${特征码字典[2]}.xyz`, 1, 本次首包数据, 所有反代数组, ctx反代兜底);
+					const 出站模式 = 反代上下文.出站模式 || 'auto';
+					if (!ctx反代IP && 出站模式 === 'auto' && 反代上下文.官方地址池?.length) {
+						// M2-P0-1：auto 模式且无手填反代IP -> 内置官方地址多候选直连（零第三方域名依赖）
+						log(`[官方直连] auto 模式出站: ${host}:${portNum}`);
+						newSocket = await 连接官方直连地址(host, portNum, 本次首包数据, 反代上下文.官方地址池, ctx反代兜底);
+					} else {
+						log(`[反代连接] 代理到: ${host}:${portNum}`);
+						const 所有反代数组 = await 解析地址端口(ctx反代IP, host, yourUUID);
+						newSocket = await connectProxyIP(`${特征码字典[0]}.tp1.${特征码字典[2]}.xyz`, 1, 本次首包数据, 所有反代数组, ctx反代兜底);
+					}
 				}
 				await 安装当前连接(newSocket, 当前连接世代, downlinkDrain);
 				if (本次发送首包) 已通过代理发送首包 = true;
@@ -4843,6 +4930,15 @@ function log(...args) {
 	if (调试日志打印) console.log(...args);
 }
 
+// M2-P0.6：识别"真实浏览器"UA（Mozilla 系内核标识）。
+// 用于伪装页分支前的无效请求短路：curl/python-requests/空 UA 等直接 404，不消耗出站子请求。
+function ua是否浏览器(ua) {
+	if (!ua || typeof ua !== 'string') return false;
+	// 排除已知 bot/工具 UA（它们可能含 Mozilla 伪装前缀）
+	if (/^(curl|wget|python|go-http|java|okhttp|scrapy|libwww|httpclient|axios|node|postman|insomnia)/i.test(ua.trim())) return false;
+	return /mozilla|applewebkit|gecko|chrome|safari|firefox|edg|opr|opera/i.test(ua);
+}
+
 // ===========================================================================
 // --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
 // ===========================================================================
@@ -5375,6 +5471,108 @@ function Surge订阅配置文件热补丁(content, url, config_JSON) {
 // ===========================================================================
 // --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
 // ===========================================================================
+// Loon 配置文件为注册表式（[section] + key = value 行）。本函数只做字段级修正，不做整段重写：
+//  1) [Proxy] 节点行的服务器（host）域名为裸 IPv6 时补方括号；
+//  2) 需要跳过证书验证时补齐 skip-cert-verify=true（trojan/vless/vmess 行）。
+//  其余内容原样透传。策略组/规则集由 SUBAPI 转换器输出携带（Loon 目标自带 [Proxy Group]）。
+function Loon订阅配置文件热补丁(content, url, config_JSON) {
+	if (typeof content !== 'string') content = String(content);
+	const 行 = content.replace(/\r\n/g, '\n').split('\n');
+	let 在Proxy段 = false;
+	const 输出 = 行.map(原行 => {
+		const 剥离 = 原行.trim();
+		if (/^\[Proxy\]\s*$/i.test(剥离)) { 在Proxy段 = true; return 原行; }
+		if (/^\[[a-z0-9_ -]+\]\s*$/i.test(剥离)) { 在Proxy段 = /^\[Proxy\]\s*$/i.test(剥离); return 原行; }
+		if (在Proxy段 && /,/.test(剥离) && /^\S+\s*=/.test(剥离) && !/^#/.test(剥离)) {
+			return 修正Loon节点行(原行, config_JSON);
+		}
+		return 原行;
+	});
+	let 结果 = 输出.join('\n');
+	if (结果.length && !结果.endsWith('\n')) 结果 += '\n';
+	return 结果;
+}
+function 修正Loon节点行(原行, config_JSON) {
+	const 等号 = 原行.indexOf('=');
+	if (等号 === -1) return 原行;
+	let 服务器段 = 原行.slice(等号 + 1);
+	const 逗号分段 = 服务器段.split(',');
+	if (逗号分段.length >= 3) {
+		// 逗号分段[0]=type, [1]=HOST, [2]=PORT，其后为 opt=val
+		let HOST = 逗号分段[1].trim();
+		if (HOST.includes(':') && !(HOST.startsWith('[') && HOST.endsWith(']'))) HOST = '[' + HOST + ']';
+		逗号分段[1] = HOST;
+		let 尾段 = 逗号分段.slice(2).join(',');
+		if (config_JSON && config_JSON.跳过证书验证 && /(trojan|vless|vmess)/i.test(逗号分段[0]) && !/\bskip-cert-verify\s*=\s*true/i.test(尾段)) {
+			尾段 = 尾段.trim().replace(/\s+$/, '');
+			尾段 = 尾段 + (尾段 ? ', ' : '') + 'skip-cert-verify=true';
+		}
+		服务器段 = 逗号分段[0] + ',' + 逗号分段[1] + ',' + 尾段;
+	}
+	return 原行.slice(0, 等号 + 1) + 服务器段;
+}
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
+// QuanX 配置为 [server_local]+[filter_remote] 结构，节点行为 `KEY = 类型, HOST:PORT, opt=val,...`。
+// 本函数只做字段级修正，不做整段重写：
+//  1) over-tls 的 ws 节点补齐 ws-path / ws-headers（若缺失）；
+//  2) 需要跳过证书验证时补齐 skip-cert-verify=true。
+//  其余内容原样透传；远端规则由 SUBAPI 转换器输出的 [filter_remote] 携带（ACL4SSR 提供）。
+function QuantumultX订阅配置文件热补丁(content, url, config_JSON) {
+	if (typeof content !== 'string') content = String(content);
+	const 路径值 = config_JSON && config_JSON.随机路径 ? 随机路径(config_JSON.完整节点路径) : (config_JSON && config_JSON.完整节点路径);
+	const 行 = content.replace(/\r\n/g, '\n').split('\n');
+	let 在服务器段 = false;
+	const 输出 = 行.map(原行 => {
+		const 剥离 = 原行.trim();
+		if (/^\[server_local\]\s*$/i.test(剥离)) { 在服务器段 = true; return 原行; }
+		if (/^\[[a-z0-9_ -]*\]\s*$/i.test(剥离)) { 在服务器段 = /^\[server_local\]\s*$/i.test(剥离); return 原行; }
+		if (在服务器段 && /^\S+\s*=/.test(剥离) && !/^#/.test(剥离)) {
+			const 等号 = 原行.indexOf('=');
+			const 剩余 = 原行.slice(等号 + 1);
+			if (/(trojan|vmess|vless)/i.test(剩余) && /over-tls\s*=\s*true/i.test(剩余)) {
+				let 修正 = 剩余;
+				if (/ws\s*=\s*true/i.test(修正) && !/ws-path\s*=/i.test(修正) && 路径值) {
+					修正 = 修正.trim().replace(/\s+$/, '') + ', ws-path=' + String(路径值).replace(/,/g, '%2C') + ', ws-headers=Host:example.com';
+				}
+				if (config_JSON && config_JSON.跳过证书验证 && !/skip-cert-verify\s*=/i.test(修正)) {
+					修正 = 修正.trim().replace(/\s+$/, '') + (修正.trim() ? ', ' : '') + 'skip-cert-verify=true';
+				}
+				return 原行.slice(0, 等号 + 1) + 修正;
+			}
+		}
+		return 原行;
+	});
+	let 结果 = 输出.join('\n');
+	if (结果.length && !结果.endsWith('\n')) 结果 += '\n';
+	return 结果;
+}
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
+// 输入为现有"协议类型://..." 链接生成器产出的逐行节点（vless:// / trojan://，每行含 # 备注），
+// 本函数仅过滤出合法节点行并拼为 text/plain。参数 完整节点路径 / config_JSON 保留以对齐统一签名。
+function 生成Shadowrocket订阅(节点链接列表, 完整节点路径, config_JSON) {
+	const 行数组 = (Array.isArray(节点链接列表) ? 节点链接列表 : String(节点链接列表).split('\n'))
+		.map(行 => 行.trim())
+		.filter(行 => 行.startsWith('vless://') || 行.startsWith('trojan://'));
+	return 行数组.join('\n') + (行数组.length ? '\n' : '');
+}
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
+// 输入为现有"协议类型://..." 链接生成器产出的逐行节点（vless:// / trojan://），
+// V2rayN / V2rayNG 原生支持 vless 链接列表，本函数仅过滤合法节点行并拼为 text/plain。
+function 生成V2rayN订阅(节点链接列表, 完整节点路径, config_JSON) {
+	const 行数组 = (Array.isArray(节点链接列表) ? 节点链接列表 : String(节点链接列表).split('\n'))
+		.map(行 => 行.trim())
+		.filter(行 => 行.startsWith('vless://') || 行.startsWith('trojan://'));
+	return 行数组.join('\n') + (行数组.length ? '\n' : '');
+}
+// ===========================================================================
+// --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
+// ===========================================================================
 async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SUB", config_JSON, 是否写入KV日志 = true) {
 	try {
 		const 当前时间 = new Date();
@@ -5402,7 +5600,8 @@ async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SU
 							'Accept': 'text/html,application/xhtml+xml,application/xml;',
 							'Accept-Encoding': 'gzip, deflate, br',
 							'User-Agent': 日志内容.UA || 'Unknown',
-						}
+						},
+						signal: AbortSignal.timeout(5000), // M2-P0.5：TG 通知 5s 超时
 					});
 				}
 			} catch (error) { console.error(`读取tg.json出错: ${error.message}`) }
@@ -5572,6 +5771,7 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 				'Accept': 'application/dns-message',
 			},
 			body: query,
+			signal: AbortSignal.timeout(3000), // M2-P0.5：DoH 3s 超时，解析失败走原始 hostname 回退
 		});
 		if (!response.ok) {
 			console.warn(`[DoH查询] 请求失败 ${域名} ${记录类型} via ${DoH解析服务} 响应代码:${response.status}`);
@@ -5685,6 +5885,25 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 // ===========================================================================
 // --- 以下为 src 模块串联产物（构建时生成，校验时剥离）---
 // ===========================================================================
+///////////////////////////////////////////////////////M2-P0 官方直连地址池///////////////////////////////////////////////////////
+// 内置 Cloudflare 官方 IPv4 地址（官方段：162.158.0.0/15、172.64.0.0/13），
+// 清单与 byJoey/cfnew v3.0 生产验证一致（同平台同流量 30 天 0 错误基线）。
+// CF 为任播网络：同一地址在不同位置落到不同机房，无需按地区区分。
+// 运行时零外部 DNS/API 依赖；KV 可通过 出站.官方地址列表 整体覆写。
+const 官方直连地址池 = [
+	'172.71.218.190', // 172.64.0.0/13
+	'162.158.228.87', // 162.158.0.0/15
+	'162.158.189.134', // 162.158.0.0/15
+	'162.158.26.63', // 162.158.0.0/15
+	'162.158.25.86', // 162.158.0.0/15
+	'162.158.29.216', // 162.158.0.0/15
+	'162.158.218.160', // 162.158.0.0/15
+	'162.158.227.214', // 162.158.0.0/15
+	'172.69.118.198', // 172.64.0.0/13
+	'172.69.119.150', // 172.64.0.0/13
+];
+const 官方直连端口 = 443;
+
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
 	const _p = 特征码字典[0];
 	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
@@ -5920,7 +6139,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 			const CF_JSON = JSON.parse(CF_TXT);
 			if (CF_JSON.UsageAPI) {
 				try {
-					const response = await fetch(CF_JSON.UsageAPI);
+					const response = await fetch(CF_JSON.UsageAPI, { signal: AbortSignal.timeout(8000) }); // M2-P0.5：用量查询 8s 超时，防上游卡死耗尽 CPU
 					const Usage = await response.json();
 					config_JSON.CF.Usage = Usage;
 				} catch (err) {
@@ -5960,11 +6179,19 @@ async function 全局读取配置(env, request, url) {
 	反代并发拨号数 = Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 反代并发拨号数);
 	TCP并发拨号数 = Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || TCP并发拨号数);
 	if (!env.TCP_CONCURRENT_DIAL && TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
-	let 默认反代IP = (`${request.cf.colo}.${特征码字典[0]}.${特征码字典[1]}SsSs.nEt`).toLowerCase(), 默认反代兜底 = true;
+	// ============ M2-P0 出站模式三层选择 ============
+	// auto（默认）：内置官方地址池直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
+	// manual：env.PROXYIP 手填（随机取一 + 兜底关闭，与旧版行为逐字一致）；
+	// region：env.出站模式/EGRESS_MODE 显式设为 region 时，path wk 指定地区走旧 colo 反代域名模板。
+	let 出站模式 = 'auto', 默认反代IP = '', 默认反代兜底 = true;
+	const env出站模式 = String(env.出站模式 || env.EGRESS_MODE || '').toLowerCase();
 	if (env.PROXYIP) {
+		出站模式 = 'manual';
 		const proxyIPs = await 整理成数组(env.PROXYIP);
 		默认反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
 		默认反代兜底 = false;
+	} else if (env出站模式 === 'region') {
+		出站模式 = 'region'; // 默认反代IP 留空，由 path wk 在 反代参数获取 中消费；无 wk 时退化为官方直连
 	}
 	if (缓存SOCKS5白名单 === null) {
 		if (env.GO2SOCKS5) SOCKS5白名单 = [...new Set(SOCKS5白名单.concat(await 整理成数组(env.GO2SOCKS5)))];
@@ -5977,7 +6204,7 @@ async function 全局读取配置(env, request, url) {
 		if (伪装页URL.toLowerCase().startsWith('http://')) 伪装页URL = 'https://' + 伪装页URL.substring(7);
 		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
 	}
-	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
 }
 
 ///////////////////////////////////////////////////////M1-P0 KV 全量配置深合并工具///////////////////////////////////////////////////////
@@ -6046,7 +6273,7 @@ async function 生成随机IP(request, count = 16, 指定端口 = -1) {
 	const cfname = 运营商名称映射[运营商文件标识] || 'CF官方优选';
 	const cfport = [443, 2053, 2083, 2087, 2096, 8443];
 	let cidrList = [];
-	try { const res = await fetch(cidr_url); cidrList = res.ok ? await 整理成数组(await res.text()) : ['104.16.0.0/13'] } catch { cidrList = ['104.16.0.0/13'] }
+	try { const res = await fetch(cidr_url, { signal: AbortSignal.timeout(5000) }); cidrList = res.ok ? await 整理成数组(await res.text()) : ['104.16.0.0/13'] } catch { cidrList = ['104.16.0.0/13'] } // M2-P0.5：CIDR 拉取 5s 超时，失败回退默认段
 
 	const generateRandomIPFromCIDR = (cidr) => {
 		const [baseIP, prefixLength] = cidr.split('/'), prefix = parseInt(prefixLength), hostBits = 32 - prefix;
@@ -6089,7 +6316,8 @@ async function 获取优选订阅生成器数据(优选订阅生成器HOST) {
 
 	try {
 		const response = await fetch(优选订阅生成器URL, {
-			headers: { 'User-Agent': 'v2rayN/edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' }
+			headers: { 'User-Agent': 'v2rayN/edge' + 'tunnel (https://github.com/' + 特征码字典[1] + '/edge' + 'tunnel)' },
+			signal: AbortSignal.timeout(8000), // M2-P0.5：优选订阅生成器 8s 超时
 		});
 
 		if (!response.ok) {
@@ -6328,16 +6556,19 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
 	return [Array.from(results), LINK数组, 需要订阅转换订阅URLs, Array.from(反代IP池)];
 }
 
-async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代兜底 = true) {
+async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代兜底 = true, 出站配置 = null) {
 	const { searchParams } = url;
 	const pathname = decodeURIComponent(url.pathname);
 	const pathLower = pathname.toLowerCase();
 	let 反代IP = 默认反代IP, 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {}, 启用反代兜底 = 默认反代兜底;
-	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底 };
+	// ============ M2-P0 出站配置透传（模式/官方地址池）============
+	// 模式默认 auto：官方地址池直连；region：由 env.出站模式 显式开启，wk 指定地区走旧 colo 反代域名模板。
+	const 出站模式 = 出站配置?.模式 || 'auto';
+	const 官方地址池 = Array.isArray(出站配置?.地址池) ? 出站配置.地址池 : [];
+	const 反代上下文 = { 木马反代地址: null, 反代IP, 代理类型: null, 代理账号: '', 代理全局: false, 代理参数: {}, 反代兜底: 启用反代兜底, 出站模式, 官方地址池 };
 	// ============ M1-P0 path 逐节点覆盖白名单（p/wk/rm/s）============
 	// 白名单外的查询参数一律忽略；p 与 wk 互斥：写 p 则地区匹配整体跳过。
-	// 说明：wk/rm 当前为预留字段——互斥与入参记录已生效，但"按地区选择出口"依赖
-	// 反代域名模板，将在 M2 出站官方直连化改造时一并接入消费点。
+	// M2-P0：wk 从预留字段转为端到端生效——region 模式下按 wk 生成旧 colo 反代域名模板；auto 模式忽略 wk 走官方直连。
 	const p覆盖 = searchParams.get('p');
 	const wk覆盖 = searchParams.get('wk');
 	const rm覆盖 = searchParams.get('rm');
@@ -6346,9 +6577,23 @@ async function 反代参数获取(url, uuid, 默认反代IP = '', 默认反代�
 	const 写入了p = p覆盖 !== null;
 	反代上下文.跳过地区匹配 = 写入了p;
 	反代上下文.地区 = 写入了p ? null : wk覆盖;      // 地区覆盖（写 p 时置空，地区匹配跳过）
-	反代上下文.地区匹配 = 写入了p ? false : ['1', 'true', 'yes', 'on'].includes(rm覆盖); // 地区匹配开关
+	// M2-P0 rm 语义修正：rm=no 强制关闭地区匹配；缺省/yes/true/on 视为开启（由出站模式下决定是否真正生效）
+	反代上下文.地区匹配 = 写入了p ? false : (rm覆盖 === 'no' ? false : true);
 	if (写入了p && p覆盖)反代IP = p覆盖;           // p（ProxyIP）：直接覆盖连接级反代IP，并关闭兜底
 	if (写入了p)启用反代兜底 = false;
+	// ============ M2-P0-2 wk 消费：region 模式下 wk 指定地区出口 ============
+	// 仅当未写 p（互斥）且 出站模式==='region' 且 wk 有效时启用旧 colo 模板；
+	// auto 模式保持 反代IP 为空 -> forward 走官方直连；rm=no 时地区匹配整体关闭。
+	if (!写入了p && 出站模式 === 'region' && 反代上下文.地区匹配 && 反代上下文.地区) {
+		const wk地区 = String(反代上下文.地区).toLowerCase().replace(/[^a-z0-9]/g, '');
+		if (wk地区) {
+			反代IP = `${wk地区}.${特征码字典[0]}.${特征码字典[1]}SsSs.nEt`;
+			启用反代兜底 = true; // 地区模板不可控，保留直连兜底（与旧版默认一致）
+			log(`[出站] region 模式：wk=${wk地区} -> 地区反代模板 ${反代IP}`);
+		}
+	} else if (!写入了p && 出站模式 === 'auto' && 反代上下文.地区) {
+		log(`[出站] auto 模式忽略 wk=${反代上下文.地区}（官方直连，不依赖地区反代域名；如需地区出口请设置 env.出站模式=region）`);
+	}
 	const 保存快照 = () => {
 		反代上下文.反代IP = 反代IP;
 		反代上下文.代理类型 = 启用SOCKS5反代;
@@ -6544,7 +6789,8 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 		if (!AccountID) {
 			const r = await fetch(`${API}/accounts`, {
 				method: "GET",
-				headers: { ...cfg, "X-AUTH-EMAIL": Email, "X-AUTH-KEY": GlobalAPIKey }
+				headers: { ...cfg, "X-AUTH-EMAIL": Email, "X-AUTH-KEY": GlobalAPIKey },
+				signal: AbortSignal.timeout(10000), // M2-P0.5：CF API 10s 超时
 			});
 			if (!r.ok) throw new Error(`账户获取失败: ${r.status}`);
 			const d = await r.json();
@@ -6560,6 +6806,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 		const res = await fetch(`${API}/graphql`, {
 			method: "POST",
 			headers: hdr,
+			signal: AbortSignal.timeout(10000), // M2-P0.5：CF API 10s 超时
 			body: JSON.stringify({
 				query: `query getBillingMetrics($AccountID: String!, $filter: AccountWorkersInvocationsAdaptiveFilter_InputObject) {
 					viewer { accounts(filter: {accountTag: $AccountID}) {

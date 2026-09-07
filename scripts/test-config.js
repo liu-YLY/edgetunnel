@@ -47,7 +47,10 @@ const TEST_BODY = `
   assert.strictEqual(cfg.加密秘钥, 'secret', '加密秘钥');
   assert.match(cfg.userID, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/, 'userID 为 UUID v4 格式');
   assert.strictEqual(cfg.host, 'example.com', 'host 取 url.hostname');
-  assert.ok(typeof cfg.默认反代IP === 'string' && cfg.默认反代IP.startsWith('sjc.'), '默认反代IP 使用 colo 前缀');
+  // M2-P0：无 PROXYIP 时默认官方直连，不再生成第三方 {colo}.SsSs.nEt 反代域名
+  assert.strictEqual(cfg.出站模式, 'auto', 'M2-P0：无任何配置时出站模式为 auto');
+  assert.strictEqual(cfg.默认反代IP, '', 'M2-P0：auto 模式默认反代IP 为空（官方直连）');
+  assert.ok(Array.isArray(cfg.官方直连地址池) && cfg.官方直连地址池.length === 10, 'M2-P0：官方地址池含 10 个地址');
   assert.strictEqual(cfg.默认反代兜底, true, '未配 PROXYIP 时兜底开启');
   assert.strictEqual(cfg.envUUID, undefined, '未配 UUID env');
   assert.strictEqual(cfg.BEST_SUB, false, 'BEST_SUB 默认 false');
@@ -62,6 +65,7 @@ const TEST_BODY = `
   assert.strictEqual(cfg.host, 'a.example.com', 'host 取 HOST 首项');
   assert.strictEqual(cfg.默认反代IP, '1.2.3.4:443', 'PROXYIP 优先');
   assert.strictEqual(cfg.默认反代兜底, false, '配 PROXYIP 后关闭兜底');
+  assert.strictEqual(cfg.出站模式, 'manual', 'M2-P0：PROXYIP 存在时出站模式为 manual');
   assert.strictEqual(cfg.envUUID, '11111111-1111-4111-8111-111111111111', 'UUID env 透传');
   assert.strictEqual(cfg.KV可用, true, 'KV 绑定可识别');
   assert.strictEqual(cfg.伪装页URL, 'https://fake.example.com', '伪装页规范化（强制 https + 去路径）');
@@ -97,7 +101,44 @@ const TEST_BODY = `
   assert.strictEqual(ctx.地区, null, 'p 与 wk 互斥：wk 被忽略');
   assert.strictEqual(ctx.跳过地区匹配, true, 'p 与 wk 互斥：地区匹配跳过');
 
-  console.log('[test] 全部断言通过（场景1 基础 env / 场景2 全量 env / 场景3 KV>env / 场景4 path 覆盖 & p/wk 互斥）');
+  // ===== M2-P0 场景 5：出站模式与 wk/rm 端到端消费 =====
+  // 5a：env.出站模式=region 生效（auto 缺省）
+  cfg = await run({ ADMIN: 'a', KEY: 'k', 出站模式: 'region' }, { colo: 'SJC' }, 'example.com');
+  assert.strictEqual(cfg.出站模式, 'region', 'M2-P0：env.出站模式=region 生效');
+  cfg = await run({ ADMIN: 'a', KEY: 'k', EGRESS_MODE: 'region' }, { colo: 'SJC' }, 'example.com');
+  assert.strictEqual(cfg.出站模式, 'region', 'M2-P0：EGRESS_MODE 别名同样生效');
+  cfg = await run({ ADMIN: 'a', KEY: 'k' }, { colo: 'SJC' }, 'example.com');
+  assert.strictEqual(cfg.出站模式, 'auto', 'M2-P0：缺省 auto');
+  assert.strictEqual(cfg.默认反代IP, '', 'M2-P0：region 模式默认反代IP 也为空（由 wk 消费）');
+
+  // 5b：region 模式 + wk -> 地区反代模板端到端生效
+  let ctx5 = await 反代参数获取(new URL('https://example.com/?wk=hk'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'region', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.反代IP, 'hk.' + 特征码字典[0] + '.' + 特征码字典[1] + 'SsSs.nEt', 'M2-P0：region+wk 生成地区反代模板');
+  assert.strictEqual(ctx5.反代兜底, true, 'M2-P0：region+wk 保留直连兜底');
+  assert.strictEqual(ctx5.出站模式, 'region', 'M2-P0：出站模式透传到反代上下文');
+  assert.ok(Array.isArray(ctx5.官方地址池) && ctx5.官方地址池.length === 1, 'M2-P0：官方地址池透传到反代上下文');
+
+  // 5c：region 模式无 wk -> 反代IP 保持空（退化官方直连）
+  ctx5 = await 反代参数获取(new URL('https://example.com/'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'region', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.反代IP, '', 'M2-P0：region 无 wk 时反代IP 为空');
+
+  // 5d：auto 模式 + wk -> wk 被忽略（官方直连，不依赖地区域名）
+  ctx5 = await 反代参数获取(new URL('https://example.com/?wk=hk'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'auto', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.反代IP, '', 'M2-P0：auto 模式忽略 wk，反代IP 为空');
+
+  // 5e：rm 语义修正 —— rm=no 强制关闭；缺省视为开启
+  ctx5 = await 反代参数获取(new URL('https://example.com/?wk=hk&rm=no'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'region', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.地区匹配, false, 'M2-P0：rm=no 强制关闭地区匹配');
+  assert.strictEqual(ctx5.反代IP, '', 'M2-P0：rm=no 时 wk 不生成地区模板');
+  ctx5 = await 反代参数获取(new URL('https://example.com/?wk=hk'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'region', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.地区匹配, true, 'M2-P0：rm 缺省视为地区匹配开启');
+
+  // 5f：p 仍为最高优先（manual per-request），与 wk 互斥
+  ctx5 = await 反代参数获取(new URL('https://example.com/?p=9.9.9.9:443&wk=hk'), '00000000-0000-4000-8000-000000000000', '', true, { 模式: 'region', 地址池: ['1.1.1.1'], 端口: 443 });
+  assert.strictEqual(ctx5.反代IP, '9.9.9.9:443', 'M2-P0：p 覆盖 region+wk');
+  assert.strictEqual(ctx5.反代兜底, false, 'M2-P0：p 关闭兜底（与 M1-P0 一致）');
+
+  console.log('[test] 全部断言通过（场景1 基础 env / 场景2 全量 env / 场景3 KV>env / 场景4 path 覆盖 & p/wk 互斥 / 场景5 M2-P0 出站模式 & wk/rm 端到端）');
   process.exit(0);
 })().catch((e) => { console.error('[test] FAIL:', e); process.exit(1); });
 `;

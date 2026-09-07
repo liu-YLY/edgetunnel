@@ -49,7 +49,8 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 		if (!AccountID) {
 			const r = await fetch(`${API}/accounts`, {
 				method: "GET",
-				headers: { ...cfg, "X-AUTH-EMAIL": Email, "X-AUTH-KEY": GlobalAPIKey }
+				headers: { ...cfg, "X-AUTH-EMAIL": Email, "X-AUTH-KEY": GlobalAPIKey },
+				signal: AbortSignal.timeout(10000), // M2-P0.5：CF API 10s 超时
 			});
 			if (!r.ok) throw new Error(`账户获取失败: ${r.status}`);
 			const d = await r.json();
@@ -65,6 +66,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 		const res = await fetch(`${API}/graphql`, {
 			method: "POST",
 			headers: hdr,
+			signal: AbortSignal.timeout(10000), // M2-P0.5：CF API 10s 超时
 			body: JSON.stringify({
 				query: `query getBillingMetrics($AccountID: String!, $filter: AccountWorkersInvocationsAdaptiveFilter_InputObject) {
 					viewer { accounts(filter: {accountTag: $AccountID}) {

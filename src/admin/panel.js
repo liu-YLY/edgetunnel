@@ -26,7 +26,8 @@ async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SU
 							'Accept': 'text/html,application/xhtml+xml,application/xml;',
 							'Accept-Encoding': 'gzip, deflate, br',
 							'User-Agent': 日志内容.UA || 'Unknown',
-						}
+						},
+						signal: AbortSignal.timeout(5000), // M2-P0.5：TG 通知 5s 超时
 					});
 				}
 			} catch (error) { console.error(`读取tg.json出错: ${error.message}`) }

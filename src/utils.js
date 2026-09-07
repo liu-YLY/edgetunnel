@@ -75,3 +75,12 @@ function 获取传输路径参数值(配置 = {}, 节点路径 = '/', 作为优�
 function log(...args) {
 	if (调试日志打印) console.log(...args);
 }
+
+// M2-P0.6：识别"真实浏览器"UA（Mozilla 系内核标识）。
+// 用于伪装页分支前的无效请求短路：curl/python-requests/空 UA 等直接 404，不消耗出站子请求。
+function ua是否浏览器(ua) {
+	if (!ua || typeof ua !== 'string') return false;
+	// 排除已知 bot/工具 UA（它们可能含 Mozilla 伪装前缀）
+	if (/^(curl|wget|python|go-http|java|okhttp|scrapy|libwww|httpclient|axios|node|postman|insomnia)/i.test(ua.trim())) return false;
+	return /mozilla|applewebkit|gecko|chrome|safari|firefox|edg|opr|opera/i.test(ua);
+}

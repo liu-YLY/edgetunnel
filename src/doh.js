@@ -53,6 +53,7 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 				'Accept': 'application/dns-message',
 			},
 			body: query,
+			signal: AbortSignal.timeout(3000), // M2-P0.5：DoH 3s 超时，解析失败走原始 hostname 回退
 		});
 		if (!response.ok) {
 			console.warn(`[DoH查询] 请求失败 ${域名} ${记录类型} via ${DoH解析服务} 响应代码:${response.status}`);
