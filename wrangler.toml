@@ -3,6 +3,10 @@ main = "_worker.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
 
+# M2-P0 收尾：开启 Workers Logs，线上错误可回溯（堆栈 + 上下文）
+[observability]
+enabled = true
+
 #[[kv_namespaces]]
 #binding = "KV"			#KV绑定名默认不可修改
 #id = ""				#KV数据库id
