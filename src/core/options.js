@@ -1,4 +1,4 @@
-/*# anchor: 原 _worker.js L4733-4808 */
+import { 获取叉HTTPPadding标识, 随机路径 } from './paths.js';
 //////////////////////////////////////////////////功能性函数///////////////////////////////////////////////
 /**
  * 带秘钥的 Base64 编码
@@ -72,9 +72,6 @@ function 获取传输路径参数值(配置 = {}, 节点路径 = '/', 作为优�
 	return 路径值.split('?')[0] || '/';
 }
 
-function log(...args) {
-	if (调试日志打印) console.log(...args);
-}
 
 // M2-P0.6（修订版）：仅拦截"明确声明的扫描/工具 UA"。
 // 修订原因：初版把"非浏览器 UA 一律 404"，误伤了 uptimeflare 等可用性监控的
@@ -91,3 +88,5 @@ function 是拦截UA(ua) {
 	if (监控探测UA.test(trimmed)) return false;      // 监控探测显式放行
 	return 拦截UA前缀.test(trimmed);                  // 仅拦明确 bot 工具
 }
+
+export { base64SecretDecode, base64SecretEncode, 是拦截UA, 获取传输协议配置, 获取传输路径参数值 };

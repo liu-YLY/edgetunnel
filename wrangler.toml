@@ -2,13 +2,30 @@ name = "v20251104"
 main = "_worker.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
+compatibility_flags = ["nodejs_als"]
 
 # M2-P0 收尾：开启 Workers Logs，线上错误可回溯（堆栈 + 上下文）
 [observability]
 enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false # 自动 invocation URL 可能包含订阅 token；使用脱敏结构化日志
 
 # M2-P0 收尾修复：激活 KV 绑定（原为孤儿命名空间）。/login、/admin、/sub、
 # cfg:{host} 全量配置均依赖 env.KV，未绑定时这些路由全部跳过、直接落伪装页。
 [[kv_namespaces]]
 binding = "KV"
 id = "8f6efb8eac6741ba9ace4353946555ac"
+
+# staging 不继承生产 KV/Secrets；首次发布前填写独立 namespace id。
+[env.staging]
+name = "edgetunnel-staging"
+workers_dev = true
+
+[[env.staging.kv_namespaces]]
+binding = "KV"
+# 本地 dev 可使用 binding；远程 staging 发布前必须创建并填写独立 id。
+
+# 可选：部署前按 Cloudflare 文档添加 LOGIN_RATE_LIMITER 绑定。
+# 未绑定时提供每 isolate 5 次/分钟的本地防护，不声称全局限流。

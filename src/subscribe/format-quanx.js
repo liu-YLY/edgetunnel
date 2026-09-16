@@ -1,4 +1,4 @@
-/*# anchor: M1-P1 QuantumultX 订阅热补丁（转换器输出 → 字段级修正，可靠性优先） */
+import { 随机路径 } from '../core/paths.js';
 // QuanX 配置为 [server_local]+[filter_remote] 结构，节点行为 `KEY = 类型, HOST:PORT, opt=val,...`。
 // 本函数只做字段级修正，不做整段重写：
 //  1) over-tls 的 ws 节点补齐 ws-path / ws-headers（若缺失）；
@@ -33,3 +33,5 @@ function QuantumultX订阅配置文件热补丁(content, url, config_JSON) {
 	if (结果.length && !结果.endsWith('\n')) 结果 += '\n';
 	return 结果;
 }
+
+export { QuantumultX订阅配置文件热补丁 };

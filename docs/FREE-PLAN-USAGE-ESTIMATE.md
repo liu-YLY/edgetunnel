@@ -1,3 +1,5 @@
+> 历史记录：当前实现与验证边界以 [CF-DEPLOYMENT.md](CF-DEPLOYMENT.md) 为准。本文旧出口策略、30 秒跨区同步、128 并发及资源归因不作为当前保证。
+
 # Free 套餐用量评估 —— 网页浏览 + 视频流量消耗（FREE-PLAN-USAGE-ESTIMATE）
 
 > 本文回答一个高频问题：**在 Cloudflare Workers Free 计划下，日常"浏览网页 + 刷视频（主流 app 网页版 + 网页）"会产生多少消耗、是否够用。**

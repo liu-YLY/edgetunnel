@@ -1,4 +1,4 @@
-/*# anchor: 原 _worker.js L1924-2013 */
+import { 数据转Uint8Array } from '../core/bytes.js';
 const UUID字节缓存 = new Map();
 const 魏烈思文本解码器 = new TextDecoder();
 
@@ -56,6 +56,7 @@ function 解析魏烈思请求(chunk, token) {
 
 	const portIdx = cmdIndex + 1;
 	const port = (data[portIdx] << 8) | data[portIdx + 1];
+    if (!port) return { hasError:true, message:'Invalid port' };
 	let addrValIdx = portIdx + 3, addrLen = 0, hostname = '';
 	const addressType = data[portIdx + 2];
 	switch (addressType) {
@@ -89,3 +90,4 @@ function 解析魏烈思请求(chunk, token) {
 	return { hasError: false, addressType, port, hostname, isUDP, rawClientData: data.subarray(rawIndex), version };
 }
 
+export { UUID字节匹配, 获取UUID字节, 解析魏烈思请求, 魏烈思文本解码器 };

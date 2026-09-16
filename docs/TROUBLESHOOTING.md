@@ -1,3 +1,5 @@
+> 历史记录：当前实现与验证边界以 [CF-DEPLOYMENT.md](CF-DEPLOYMENT.md) 为准。本文旧出口策略、30 秒跨区同步、128 并发及资源归因不作为当前保证。
+
 # edgetunnel 排障与避坑手册（TROUBLESHOOTING）
 
 > 维护约定：**踩一个坑记一条**。每条含「现象 / 根因 / 修复 / 预防」。

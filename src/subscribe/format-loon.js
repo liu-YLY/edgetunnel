@@ -1,4 +1,3 @@
-/*# anchor: M1-P1 Loon 订阅热补丁（转换器输出 → 字段级修正，可靠性优先） */
 // Loon 配置文件为注册表式（[section] + key = value 行）。本函数只做字段级修正，不做整段重写：
 //  1) [Proxy] 节点行的服务器（host）域名为裸 IPv6 时补方括号；
 //  2) 需要跳过证书验证时补齐 skip-cert-verify=true（trojan/vless/vmess 行）。
@@ -39,3 +38,5 @@ function 修正Loon节点行(原行, config_JSON) {
 	}
 	return 原行.slice(0, 等号 + 1) + 服务器段;
 }
+
+export { Loon订阅配置文件热补丁 };

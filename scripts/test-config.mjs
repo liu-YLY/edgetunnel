@@ -1,25 +1,15 @@
-// M0-3 golden 测试：验证 全局读取配置 与旧逻辑行为一致（逐字段断言）。
-// 方案：将构建产物 transform（export default → globalThis.__worker）后，
-// 由 node 以子进程执行 bundle + 测试体（顶层只做声明，fetch 不会被调用）。
-'use strict';
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execFileSync } = require('child_process');
+import { 全局读取配置, 读取config_JSON } from '../src/config/index.js';
+import { 反代参数获取 } from '../src/proxy/options.js';
+import { 特征码字典 } from '../src/core/constants.js';
+import assert from 'node:assert/strict';
+import nodeCrypto from 'node:crypto';
 
-// 仓库根：基于脚本位置推导（test-config.js 位于 scripts/ 下），
-// 兼容本地沙箱与 CI checkout（两者工作目录不同，禁止硬编码绝对路径）。
-const ROOT = path.resolve(__dirname, '..');
-const PRODUCT = path.join(ROOT, '_worker.js');
-
-// 测试体：注入到 bundle 末尾一并执行（与 _worker.js 顶层共享作用域）
-const TEST_BODY = `
 ;(async () => {
-  const assert = require('assert');
+
   // MD5 shim：CF Workers 的 WebCrypto 支持 'MD5' 摘要（非标准扩展），node 不支持。
   // 仅在测试环境注入，映射到 node:crypto 的 createHash('md5')，业务代码零改动。
   {
-    const nodeCrypto = require('crypto');
+    
     const origDigest = crypto.subtle.digest.bind(crypto.subtle);
     crypto.subtle.digest = async (algo, data) => {
       const name = typeof algo === 'string' ? algo : algo.name;
@@ -37,7 +27,7 @@ const TEST_BODY = `
       method: 'GET',
     };
     // 每次调用前重置被副作用写入的全局变量
-    调试日志打印 = false; 预加载竞速拨号 = false; 反代并发拨号数 = 1; TCP并发拨号数 = 1;
+    // 请求配置不再写入模块全局。
     return await 全局读取配置(env, request, url);
   };
 
@@ -50,13 +40,13 @@ const TEST_BODY = `
   // M2-P0：无 PROXYIP 时默认官方直连，不再生成第三方 {colo}.SsSs.nEt 反代域名
   assert.strictEqual(cfg.出站模式, 'auto', 'M2-P0：无任何配置时出站模式为 auto');
   assert.strictEqual(cfg.默认反代IP, '', 'M2-P0：auto 模式默认反代IP 为空（官方直连）');
-  assert.ok(Array.isArray(cfg.官方直连地址池) && cfg.官方直连地址池.length === 10, 'M2-P0：官方地址池含 10 个地址');
+  assert.ok(Array.isArray(cfg.官方直连地址池) && cfg.官方直连地址池.length === 0, 'auto 不含内置 Cloudflare 出口');
   assert.strictEqual(cfg.默认反代兜底, true, '未配 PROXYIP 时兜底开启');
   assert.strictEqual(cfg.envUUID, undefined, '未配 UUID env');
   assert.strictEqual(cfg.BEST_SUB, false, 'BEST_SUB 默认 false');
   assert.strictEqual(cfg.KV可用, false, '无 KV 绑定');
   assert.strictEqual(cfg.伪装页URL, 'nginx', '伪装页默认 nginx');
-  assert.strictEqual(调试日志打印, true, 'DEBUG=true 副作用全局生效');
+  assert.strictEqual(cfg.运行配置.调试日志打印, true, 'DEBUG 属于返回的请求配置');
 
   // 场景 2：配 HOST + PROXYIP + UUID + KV stub + URL 伪装页
   const kvStub = { get: async () => null, put: async () => {}, delete: async () => {} };
@@ -146,7 +136,7 @@ const TEST_BODY = `
   const 首次读数 = kv读计数;
   assert.ok(首次读数 >= 4, '场景6: 首次调用发生 KV 读(config/tg/cf/cfg)');
   const cfg6b = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 缓存键主机, 缓存UUID, 'test');
-  assert.strictEqual(cfg6b, cfg6a, '场景6: 30s 内命中缓存返回同一对象');
+  assert.notStrictEqual(cfg6b, cfg6a, '场景6: 30s 内命中缓存返回独立快照');
   assert.strictEqual(kv读计数, 首次读数, '场景6: 缓存命中零 KV 读');
   const cfg6c = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', KV: kv计数Stub }, 'other.example.com', 缓存UUID, 'test');
   assert.notStrictEqual(cfg6c, cfg6a, '场景6: 不同 host 不命中缓存');
@@ -157,31 +147,3 @@ const TEST_BODY = `
   console.log('[test] 全部断言通过（场景1-2 基础/全量 env / 场景3 KV>env / 场景4 path 覆盖 / 场景5 M2-P0 出站 / 场景6 M2-P1 config 缓存）');
   process.exit(0);
 })().catch((e) => { console.error('[test] FAIL:', e); process.exit(1); });
-`;
-
-function main() {
-  const raw = fs.readFileSync(PRODUCT, 'utf8');
-  // 仅替换第一处 `export default {`（main.js 的 Worker 入口对象字面量）
-  const idx = raw.indexOf('export default {');
-  if (idx === -1) { console.error('[test] FAIL: 产物中未找到 export default {'); process.exit(1); }
-  const bundle = raw.slice(0, idx) + 'globalThis.__worker = {' + raw.slice(idx + 'export default {'.length) + '\n' + TEST_BODY;
-
-  const tmp = path.join(os.tmpdir(), `m0-config-test-${process.pid}-${Date.now()}.cjs`);
-  fs.writeFileSync(tmp, bundle, 'utf8');
-  try {
-    execFileSync(process.execPath, [tmp], {
-      cwd: ROOT,
-      stdio: ['pipe', 'inherit', 'inherit'],
-      env: Object.assign({}, process.env, { NODE_OPTIONS: '' }),
-      maxBuffer: 8 * 1024 * 1024,
-    });
-  } catch (e) {
-    // 子进程的 stderr 已 inherit；这里补充退出信息
-    console.error(`[test] FAIL: 断言失败或执行异常 (exit ${e.status})`);
-    process.exitCode = e.status || 1;
-  } finally {
-    try { fs.rmSync(tmp, { force: true }); } catch (_) {}
-  }
-}
-
-main();

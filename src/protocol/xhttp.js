@@ -1,4 +1,13 @@
-/*# anchor: 原 _worker.js L530-977 */
+import { 有效数据长度 } from '../core/bytes.js';
+import { log } from '../core/context.js';
+import { sha224 } from '../core/crypto.js';
+import { 获取叉HTTPPadding标识 } from '../core/paths.js';
+import { UUID字节匹配, 魏烈思文本解码器 } from './vless.js';
+import { isSpeedTestSite, 构造本地204响应 } from '../transport/dial.js';
+import { forwardataTCP } from '../transport/forward.js';
+import { 创建上行Grain合包流 } from '../transport/grain.js';
+import { closeSocketQuietly, 失效TCP连接世代 } from '../transport/lifecycle.js';
+import { forwardataudp, 转发木马UDP数据 } from '../transport/udp.js';
 ///////////////////////////////////////////////////////////////////////叉HTTP传输数据///////////////////////////////////////////////
 const HPACKHuffman码长 = [
 	13, 23, 28, 28, 28, 28, 28, 28, 28, 24, 30, 28, 28, 30, 28, 28,
@@ -20,9 +29,6 @@ const HPACKHuffman码长 = [
 	30
 ];
 
-function 获取叉HTTPPadding标识(yourUUID) {
-	return { 头: yourUUID.slice(1, 7), 键: '_' + yourUUID.slice(25, 31) };
-}
 
 function 计算HPACKHuffman字节长度(字符串) {
 	const 字节 = new TextEncoder().encode(字符串);
@@ -251,41 +257,6 @@ function 处理叉HTTPUDP请求(首包, reader, request, 反代上下文, respon
 	}), { status: 200, headers: responseHeaders });
 }
 
-function 有效数据长度(data) {
-	if (!data) return 0;
-	if (typeof data.byteLength === 'number') return data.byteLength;
-	if (typeof data.length === 'number') return data.length;
-	return 0;
-}
-
-function 失效TCP连接世代(remoteConnWrapper) {
-	if (!remoteConnWrapper) return;
-	remoteConnWrapper.generation = (Number.isInteger(remoteConnWrapper.generation) ? remoteConnWrapper.generation : 0) + 1;
-	const socket = remoteConnWrapper.socket;
-	remoteConnWrapper.socket = null;
-	remoteConnWrapper.downlinkController = null;
-	remoteConnWrapper.downlinkDrain = Promise.resolve();
-	try { socket?.close?.() } catch (e) { }
-}
-
-function 开始TCP连接世代(remoteConnWrapper) {
-	if (!Number.isInteger(remoteConnWrapper.generation)) remoteConnWrapper.generation = 0;
-	const generation = ++remoteConnWrapper.generation;
-	const previousSocket = remoteConnWrapper.socket;
-	remoteConnWrapper.socket = null;
-	const previousDownlink = remoteConnWrapper.downlinkController;
-	remoteConnWrapper.downlinkController = null;
-	const previousDrain = remoteConnWrapper.downlinkDrain || Promise.resolve();
-	let currentDrain;
-	try { currentDrain = previousDownlink?.停止并刷新?.() || Promise.resolve() }
-	catch (error) { currentDrain = Promise.reject(error) }
-	const downlinkDrain = Promise.all([previousDrain, currentDrain]);
-	// Installation awaits this promise; attach a handler immediately in case draining fails before dialing completes.
-	downlinkDrain.catch(() => { });
-	remoteConnWrapper.downlinkDrain = downlinkDrain;
-	try { previousSocket?.close?.() } catch (e) { }
-	return { generation, downlinkDrain };
-}
 
 async function 读取叉HTTP首包(reader, token) {
 	const decoder = 魏烈思文本解码器;
@@ -447,3 +418,5 @@ async function 读取叉HTTP首包(reader, token) {
 	if (最终魏烈思结果.状态 === 'ok') return { ...最终魏烈思结果.结果, reader };
 	return null;
 }
+
+export { 处理叉HTTP请求 };

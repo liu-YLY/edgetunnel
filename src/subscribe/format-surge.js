@@ -1,4 +1,4 @@
-/*# anchor: 原 _worker.js L5307-5325 */
+import { 随机路径 } from '../core/paths.js';
 function Surge订阅配置文件热补丁(content, url, config_JSON) {
 	const 每行内容 = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 	const 完整节点路径 = config_JSON.随机路径 ? 随机路径(config_JSON.完整节点路径) : config_JSON.完整节点路径;
@@ -18,3 +18,4 @@ function Surge订阅配置文件热补丁(content, url, config_JSON) {
 	return 输出内容;
 }
 
+export { Surge订阅配置文件热补丁 };

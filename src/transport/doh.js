@@ -1,4 +1,4 @@
-/*# anchor: 原 _worker.js L5424-5586 */
+import { log } from '../core/context.js';
 const DoH缓存 = {};
 const DoH缓存最大条目 = 256;
 const DoH记录类型映射 = { A: 1, NS: 2, CNAME: 5, MX: 15, TXT: 16, AAAA: 28, SRV: 33, HTTPS: 65 };
@@ -163,3 +163,4 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 	}
 }
 
+export { DoH查询 };

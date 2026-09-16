@@ -1,4 +1,3 @@
-/*# anchor: 原 _worker.js L5027-5306 */
 async function Singbox订阅配置文件热补丁(SingBox_原始订阅内容, config_JSON = {}) {
 	const uuid = config_JSON?.UUID || null;
 	const fingerprint = config_JSON?.Fingerprint || "chrome";
@@ -279,3 +278,4 @@ async function Singbox订阅配置文件热补丁(SingBox_原始订阅内容, co
 	}
 }
 
+export { Singbox订阅配置文件热补丁 };

@@ -1,35 +1,29 @@
-/*# anchor: 原 _worker.js L5587-5832 */
-///////////////////////////////////////////////////////M2-P0 官方直连地址池///////////////////////////////////////////////////////
-// 内置 Cloudflare 官方 IPv4 地址（官方段：162.158.0.0/15、172.64.0.0/13），
-// 清单与 byJoey/cfnew v3.0 生产验证一致（同平台同流量 30 天 0 错误基线）。
-// CF 为任播网络：同一地址在不同位置落到不同机房，无需按地区区分。
-// 运行时零外部 DNS/API 依赖；KV 可通过 出站.官方地址列表 整体覆写。
-const 官方直连地址池 = [
-	'172.71.218.190', // 172.64.0.0/13
-	'162.158.228.87', // 162.158.0.0/15
-	'162.158.189.134', // 162.158.0.0/15
-	'162.158.26.63', // 162.158.0.0/15
-	'162.158.25.86', // 162.158.0.0/15
-	'162.158.29.216', // 162.158.0.0/15
-	'162.158.218.160', // 162.158.0.0/15
-	'162.158.227.214', // 162.158.0.0/15
-	'172.69.118.198', // 172.64.0.0/13
-	'172.69.119.150', // 172.64.0.0/13
-];
+import { MD5MD5 } from '../core/crypto.js';
+import { config缓存TTL, config缓存映射, 用量缓存, 配置缓存世代 } from './cache.js';
+import { 验证配置 } from './validation.js';
+import { 特征码字典, 默认SOCKS5白名单 } from '../core/constants.js';
+import { 当前请求配置 } from '../core/context.js';
+import { 掩码敏感信息 } from '../core/html.js';
+import { 获取传输协议配置, 获取传输路径参数值 } from '../core/options.js';
+import { 整理成数组, 识别运营商 } from '../core/strings.js';
+import { getCloudflareUsage } from '../services/usage.js';
+// auto 仅连接原始目标；不将 Cloudflare 地址当成通用代理出口。
+const 官方直连地址池 = Object.freeze([]); // 兼容旧配置字段，禁止内置候选
 const 官方直连端口 = 443;
 
 // ============ M2-P1 最小版: config_JSON 30s 内存缓存 ============
 // 订阅/管理路径每请求 4×KV 串行读 + UsageAPI 查询, 高频刷新时延迟与配额放大。
 // 以 host|userID 为键缓存 30s; 面板保存配置(admin/config.json、admin/config、
 // admin/cf.json)时主动 clear()。WS 代理路径不经过此函数, 不受影响。
-// 约定: 调用方不得修改返回对象(缓存共享引用); 需要强刷传 重置配置=true。
-const config缓存映射 = new Map();
-const config缓存TTL = 30 * 1000;
+// 缓存保存快照；调用方总是持有独立副本。KV 跨区域仍为最终一致。
+
 
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
-	const 缓存键 = hostname + '|' + userID;
+	let config_JSON;
+    const 加载世代 = 配置缓存世代;
+	const 缓存键 = hostname + '|' + userID + '|' + UA;
 	const 缓存命中 = (!重置配置) && config缓存映射.get(缓存键);
-	if (缓存命中 && Date.now() - 缓存命中.t < config缓存TTL) return 缓存命中.v;
+	if (缓存命中 && Date.now() - 缓存命中.t < config缓存TTL) return structuredClone(缓存命中.v);
 	const _p = 特征码字典[0];
 	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
 		TIME: new Date().toISOString(),
@@ -84,7 +78,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 				启用: null,
 				全局: false,
 				账号: '',
-				白名单: SOCKS5白名单,
+				白名单: 当前请求配置().SOCKS5白名单,
 			},
 			路径模板: {
 				[_p]: "proxyip=" + 占位符,
@@ -137,7 +131,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 			await env.KV.put('config.json', JSON.stringify(默认配置JSON, null, 2));
 			config_JSON = 默认配置JSON;
 		} else {
-			config_JSON = JSON.parse(configJSON);
+			const stored = 验证配置(JSON.parse(configJSON), 默认配置JSON);
+            config_JSON = 深合并配置(structuredClone(默认配置JSON), stored);
 		}
 	} catch (error) {
 		console.error(`读取config_JSON出错: ${error.message}`);
@@ -200,7 +195,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 		const KV全量配置文本 = await env.KV.get(KV全量配置名);
 		if (KV全量配置文本) {
 			const KV全量配置对象 = JSON.parse(KV全量配置文本);
-			if (KV全量配置对象 && typeof KV全量配置对象 === 'object') 深合并配置(config_JSON, KV全量配置对象);
+			验证配置(KV全量配置对象, 默认配置JSON);
+            深合并配置(config_JSON, KV全量配置对象);
 		}
 	} catch (error) {
 		console.error(`读取KV全量配置 cfg:${host} 出错: ${error.message}`);
@@ -262,23 +258,23 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 			await env.KV.put('cf.json', JSON.stringify(初始化CF_JSON, null, 2));
 		} else {
 			const CF_JSON = JSON.parse(CF_TXT);
-			if (CF_JSON.UsageAPI) {
-				try {
-					const response = await fetch(CF_JSON.UsageAPI, { signal: AbortSignal.timeout(8000) }); // M2-P0.5：用量查询 8s 超时，防上游卡死耗尽 CPU
-					const Usage = await response.json();
-					config_JSON.CF.Usage = Usage;
-				} catch (err) {
-					console.error(`请求 CF_JSON.UsageAPI 失败: ${err.message}`);
-				}
-			} else {
-				config_JSON.CF.Email = CF_JSON.Email ? CF_JSON.Email : null;
-				config_JSON.CF.GlobalAPIKey = CF_JSON.GlobalAPIKey ? 掩码敏感信息(CF_JSON.GlobalAPIKey) : null;
-				config_JSON.CF.AccountID = CF_JSON.AccountID ? 掩码敏感信息(CF_JSON.AccountID) : null;
-				config_JSON.CF.APIToken = CF_JSON.APIToken ? 掩码敏感信息(CF_JSON.APIToken) : null;
-				config_JSON.CF.UsageAPI = null;
-				const Usage = await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
-				config_JSON.CF.Usage = Usage;
-			}
+            config_JSON.CF.Email = CF_JSON.Email || null;
+            for (const key of ['GlobalAPIKey','AccountID','APIToken']) config_JSON.CF[key] = CF_JSON[key] ? 掩码敏感信息(CF_JSON[key]) : null;
+            const usageKey = host;
+            const cached = 用量缓存.get(usageKey);
+            if (cached?.value) config_JSON.CF.Usage = structuredClone(cached.value);
+            if (当前请求配置().ctx && (!cached || Date.now() - cached.time > 60000) && !cached?.pending) {
+                const entry = { time:Date.now(), value:cached?.value, pending:true };
+                if (用量缓存.size >= 50) 用量缓存.delete(用量缓存.keys().next().value);
+                用量缓存.set(usageKey, entry);
+                当前请求配置().ctx.waitUntil((async () => {
+                    try {
+                        entry.value = CF_JSON.UsageAPI ? await (await fetch(CF_JSON.UsageAPI, { signal:AbortSignal.timeout(8000) })).json()
+                            : await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
+                    } catch { console.error(JSON.stringify({ event:'usage_refresh_failed' })); }
+                    finally { entry.pending = false; entry.time = Date.now(); }
+                })());
+            }
 		}
 	} catch (error) {
 		console.error(`读取cf.json出错: ${error.message}`);
@@ -286,7 +282,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 
 	config_JSON.加载时间 = (performance.now() - 初始化开始时间).toFixed(2) + 'ms';
 	if (config缓存映射.size > 50) config缓存映射.clear();
-	config缓存映射.set(缓存键, { t: Date.now(), v: config_JSON });
+	if (加载世代 === 配置缓存世代) config缓存映射.set(缓存键, { t: Date.now(), v: structuredClone(config_JSON) });
 	return config_JSON;
 }
 
@@ -301,18 +297,15 @@ async function 全局读取配置(env, request, url) {
 	const userID = (envUUID && uuidRegex.test(envUUID)) ? envUUID.toLowerCase() : [userIDMD5.slice(0, 8), userIDMD5.slice(8, 12), '4' + userIDMD5.slice(13, 16), '8' + userIDMD5.slice(17, 20), userIDMD5.slice(20)].join('-');
 	const hosts = env.HOST ? (await 整理成数组(env.HOST)).map(h => h.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0]) : [url.hostname];
 	const host = hosts[0];
-	// ============ H1 修复: 每请求无条件重置(以 env 派生值为准) ============
-	// 原实现以 `|| 旧值` 回退, isolate 并发请求互相污染(DEBUG 一开永久开、
-	// 拨号数被劫持继承)。现按 env 每请求重置, 语义与"请求级配置"一致。
-	// 默认值: DEBUG/竞速关闭; 反代并发 1; TCP 并发 2(cmcc 运营商降 1)。
-	调试日志打印 = ['1', 'true'].includes(env.DEBUG);
-	预加载竞速拨号 = ['1', 'true'].includes(env.PRELOAD_RACE_DIAL);
-	反代并发拨号数 = env.PROXY_CONCURRENT_DIAL ? Math.max(1, Number(env.PROXY_CONCURRENT_DIAL) || 1) : 1;
-	TCP并发拨号数 = env.TCP_CONCURRENT_DIAL
-		? Math.max(1, Number(env.TCP_CONCURRENT_DIAL) || 1)
-		: (识别运营商(request) === 'cmcc' ? 1 : 2);
+	const 运行配置 = Object.freeze({
+        调试日志打印: ['1', 'true'].includes(env.DEBUG),
+        预加载竞速拨号: ['1', 'true'].includes(env.PRELOAD_RACE_DIAL),
+        反代并发拨号数: 限制拨号数(env.PROXY_CONCURRENT_DIAL, 1),
+        TCP并发拨号数: 限制拨号数(env.TCP_CONCURRENT_DIAL, 识别运营商(request) === 'cmcc' ? 1 : 2),
+        SOCKS5白名单: Object.freeze([...new Set([...默认SOCKS5白名单, ...(env.GO2SOCKS5 ? await 整理成数组(env.GO2SOCKS5) : [])])]),
+    });
 	// ============ M2-P0 出站模式三层选择 ============
-	// auto（默认）：内置官方地址池直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
+	// auto（默认）：原始目标直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
 	// manual：env.PROXYIP 手填（随机取一 + 兜底关闭，与旧版行为逐字一致）；
 	// region：env.出站模式/EGRESS_MODE 显式设为 region 时，path wk 指定地区走旧 colo 反代域名模板。
 	let 出站模式 = 'auto', 默认反代IP = '', 默认反代兜底 = true;
@@ -323,12 +316,8 @@ async function 全局读取配置(env, request, url) {
 		默认反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
 		默认反代兜底 = false;
 	} else if (env出站模式 === 'region') {
-		出站模式 = 'region'; // 默认反代IP 留空，由 path wk 在 反代参数获取 中消费；无 wk 时退化为官方直连
+		出站模式 = 'region'; // 默认反代IP 留空，由 path wk 在 反代参数获取 中消费；无 wk 时仅直连目标
 	}
-	if (缓存SOCKS5白名单 === null) {
-		if (env.GO2SOCKS5) SOCKS5白名单 = [...new Set(SOCKS5白名单.concat(await 整理成数组(env.GO2SOCKS5)))];
-		缓存SOCKS5白名单 = SOCKS5白名单;
-	} else SOCKS5白名单 = 缓存SOCKS5白名单;
 	let 伪装页URL = env.URL || 'nginx';
 	if (伪装页URL && 伪装页URL !== 'nginx' && 伪装页URL !== '1101') {
 		伪装页URL = 伪装页URL.trim().replace(/\/$/, '');
@@ -336,7 +325,7 @@ async function 全局读取配置(env, request, url) {
 		if (伪装页URL.toLowerCase().startsWith('http://')) 伪装页URL = 'https://' + 伪装页URL.substring(7);
 		try { const u = new URL(伪装页URL); 伪装页URL = u.protocol + '//' + u.host } catch (e) { 伪装页URL = 'nginx' }
 	}
-	return { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
+	return { 运行配置, 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB: ['1', 'true'].includes(env.BEST_SUB), KV可用: !!(env.KV && typeof env.KV.get === 'function'), 伪装页URL };
 }
 
 ///////////////////////////////////////////////////////M1-P0 KV 全量配置深合并工具///////////////////////////////////////////////////////
@@ -345,6 +334,7 @@ function 深合并配置(目标, 来源) {
 	if (!目标 || !来源 || typeof 目标 !== 'object' || typeof 来源 !== 'object') return 目标;
 	if (Array.isArray(来源)) return 目标;
 	for (const 键 of Object.keys(来源)) {
+        if (['__proto__', 'constructor', 'prototype'].includes(键)) continue;
 		const 值 = 来源[键];
 		if (值 === undefined) continue;
 		if (值 && typeof 值 === 'object' && !Array.isArray(值) &&
@@ -357,3 +347,7 @@ function 深合并配置(目标, 来源) {
 	return 目标;
 }
 
+
+function 限制拨号数(value, fallback) { const n = Number(value); return Number.isFinite(n) && n > 0 ? Math.min(3, Math.max(1, Math.floor(n))) : fallback; }
+
+export { 全局读取配置, 读取config_JSON };

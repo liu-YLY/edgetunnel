@@ -1,4 +1,13 @@
-/*# anchor: 原 _worker.js L978-1247 */
+import { 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
+import { 下行Grain包字节 } from '../core/constants.js';
+import { log } from '../core/context.js';
+import { 解析木马请求 } from './trojan.js';
+import { 解析魏烈思请求 } from './vless.js';
+import { isSpeedTestSite, 构造本地204响应 } from '../transport/dial.js';
+import { forwardataTCP } from '../transport/forward.js';
+import { 创建上行写入队列 } from '../transport/grain.js';
+import { 失效TCP连接世代 } from '../transport/lifecycle.js';
+import { forwardataudp, 转发木马UDP数据 } from '../transport/udp.js';
 ///////////////////////////////////////////////////////////////////////gRPC传输数据///////////////////////////////////////////////
 async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 	if (!request.body) return new Response('Bad Request', { status: 400 });
@@ -269,3 +278,4 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 	}), { status: 200, headers: grpcHeaders });
 }
 
+export { 处理gRPC请求 };

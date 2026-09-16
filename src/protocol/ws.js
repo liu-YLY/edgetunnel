@@ -1,4 +1,15 @@
-/*# anchor: 原 _worker.js L1248-1788 */
+import { 拼接字节数据, 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
+import { WS早期数据最大头长度, WS早期数据最大字节, 上行队列最大字节, 上行队列最大条目 } from '../core/constants.js';
+import { log, 当前请求配置, 请求存储 } from '../core/context.js';
+import { sha224 } from '../core/crypto.js';
+import { SSAEAD加密, SSAEAD标签长度, SSAEAD解密, SSNonce长度, SS支持加密配置, SS文本解码器, SS派生主密钥, SS派生会话密钥 } from './ss.js';
+import { 解析木马请求 } from './trojan.js';
+import { UUID字节匹配, 解析魏烈思请求, 魏烈思文本解码器 } from './vless.js';
+import { isSpeedTestSite, 构造WS本地204响应 } from '../transport/dial.js';
+import { forwardataTCP } from '../transport/forward.js';
+import { WebSocket发送并等待, 创建上行写入队列 } from '../transport/grain.js';
+import { closeSocketQuietly, 失效TCP连接世代 } from '../transport/lifecycle.js';
+import { forwardataudp, 转发木马UDP数据 } from '../transport/udp.js';
 function 是有效WS早期数据(bytes, token) {
 	if (!bytes?.byteLength) return false;
 	if (bytes.byteLength >= 18 && UUID字节匹配(bytes, 1, token)) return true;
@@ -42,7 +53,10 @@ function 解码WS早期数据(header, token) {
 
 ///////////////////////////////////////////////////////////////////////WS传输数据///////////////////////////////////////////////
 async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
+	const 请求上下文 = 当前请求配置();
 	const WS套接字对 = new WebSocketPair();
+    let 握手缓存 = new Uint8Array(), 握手完成 = false;
+    const 握手定时器 = setTimeout(() => { if (!握手完成) closeSocketQuietly(serverSock); }, 5000);
 	const [clientSock, serverSock] = Object.values(WS套接字对);
 	try { (/** @type {any} */ (serverSock)).accept({ allowHalfOpen: true }) }
 	catch (_) { serverSock.accept() }
@@ -387,6 +401,15 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	};
 
 	const 处理WS入站数据 = async (chunk) => {
+        if (!握手完成 && !url.searchParams.get('enc')) {
+            const bytes = 数据转Uint8Array(chunk);
+            握手缓存 = 拼接字节数据(握手缓存, bytes);
+            if (!隧道首包完整(握手缓存, yourUUID)) { if (握手缓存.length > WS早期数据最大字节) throw new Error('handshake too large'); return; }
+            chunk = 握手缓存;
+            握手缓存 = new Uint8Array();
+            握手完成 = true;
+            clearTimeout(握手定时器);
+        } else if (!握手完成) { 握手完成 = true; clearTimeout(握手定时器); }
 		let 当前块字节 = null;
 		if (isDnsQuery) {
 			if (判断是否是木马) return await 转发木马UDP数据(chunk, serverSock, 木马UDP上下文, request);
@@ -517,9 +540,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	};
 
 	serverSock.addEventListener('message', (event) => {
-		入队WS显式传输(event.data);
+		请求存储.run(请求上下文, () => 入队WS显式传输(event.data));
 	});
 	serverSock.addEventListener('close', () => {
+        clearTimeout(握手定时器);
 		closeSocketQuietly(serverSock);
 		收尾WS显式传输();
 	});
@@ -540,3 +564,26 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	return new Response(null, { status: 101, webSocket: clientSock, headers: { 'Sec-WebSocket-Extensions': '' } });
 }
 
+
+// 返回 false 表示需要后续消息；完整帧交给协议解析器校验认证与字段。
+function 隧道首包完整(bytes, token) {
+ if (!bytes.length) return false;
+ const vless = bytes[0] === 0 || (bytes.length >= 17 && UUID字节匹配(bytes, 1, token));
+ if (vless) {
+  if (bytes.length < 18) return false;
+  const cmd = 18 + bytes[17]; if (bytes.length < cmd + 4) return false;
+  const type = bytes[cmd + 3], start = cmd + 4;
+  if (type === 1) return bytes.length >= start + 4;
+  if (type === 3) return bytes.length >= start + 16;
+  if (type === 2) return bytes.length > start && bytes.length >= start + 1 + bytes[start];
+  return true;
+ }
+ if (bytes.length < 60) return false;
+ const type = bytes[59], start = 60;
+ if (type === 1) return bytes.length >= start + 8;
+ if (type === 4) return bytes.length >= start + 20;
+ if (type === 3) return bytes.length > start && bytes.length >= start + 1 + bytes[start] + 4;
+ return true;
+}
+
+export { 处理WS请求 };

@@ -1,4 +1,6 @@
-/*# anchor: 原 _worker.js L3096-3334 */
+import { 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
+import { log } from '../core/context.js';
+import { connect as cloudflareConnect } from 'cloudflare:sockets';
 function isSpeedTestSite(hostname) {
 	const speedTestDomains = ['speed.cloudflare.com', 'cp.cloudflare.com'];
 	hostname = hostname.toLowerCase();
@@ -37,7 +39,7 @@ function 构造WS本地204响应(respHeader = null) {
 }
 
 ///////////////////////////////////////////////////////SOCKS5/HTTP函数///////////////////////////////////////////////
-async function socks5Connect(targetHost, targetPort, initialData, TCP连接, parsedSocks5) {
+async function socks5ConnectRaw(targetHost, targetPort, initialData, TCP连接, parsedSocks5) {
 	const { username, password, hostname, port } = parsedSocks5 || {};
 	const socket = TCP连接({ hostname, port }), writer = socket.writable.getWriter(), reader = socket.readable.getReader();
 	try {
@@ -73,7 +75,7 @@ async function socks5Connect(targetHost, targetPort, initialData, TCP连接, par
 	}
 }
 
-async function httpConnect(targetHost, targetPort, initialData, HTTPS代理 = false, TCP连接, parsedSocks5) {
+async function httpConnectRaw(targetHost, targetPort, initialData, HTTPS代理 = false, TCP连接, parsedSocks5) {
 	const { username, password, hostname, port } = parsedSocks5 || {};
 	const socket = HTTPS代理
 		? TCP连接({ hostname, port }, { secureTransport: 'on', allowHalfOpen: false })
@@ -114,11 +116,15 @@ async function httpConnect(targetHost, targetPort, initialData, HTTPS代理 = fa
 
 		// CONNECT 响应头后可能夹带隧道数据，先回灌到可读流，避免首包被吞。
 		if (bytesRead > headerEndIndex) {
-			const { readable, writable } = new TransformStream();
-			const transformWriter = writable.getWriter();
-			await transformWriter.write(responseBuffer.subarray(headerEndIndex, bytesRead));
-			transformWriter.releaseLock();
-			socket.readable.pipeTo(writable).catch(() => { });
+            const upstream = socket.readable.getReader();
+            const readable = new ReadableStream({
+                start(controller) { controller.enqueue(responseBuffer.subarray(headerEndIndex, bytesRead)); },
+                async pull(controller) {
+                    try { const { done, value } = await upstream.read(); if (done) { upstream.releaseLock(); controller.close(); } else controller.enqueue(value); }
+                    catch (error) { controller.error(error); await socket.close(); }
+                },
+                async cancel(reason) { try { await upstream.cancel(reason); } finally { upstream.releaseLock(); await socket.close(); } }
+            });
 			return { readable, writable: socket.writable, closed: socket.closed, close: () => socket.close() };
 		}
 
@@ -131,110 +137,36 @@ async function httpConnect(targetHost, targetPort, initialData, HTTPS代理 = fa
 	}
 }
 
+// HTTPS 统一由 Workers 原生 TLS 验证证书，不再使用自实现 TLS。
 async function httpsConnect(targetHost, targetPort, initialData, TCP连接, parsedSocks5) {
-	const { username, password, hostname, port } = parsedSocks5 || {};
-	const encoder = new TextEncoder();
-	const decoder = new TextDecoder();
-	let tlsSocket = null;
-	const tlsServerName = isIPHostname(hostname) ? '' : stripIPv6Brackets(hostname);
-	const 打开HTTPS代理TLS = async (allowChacha = false) => {
-		const proxySocket = TCP连接({ hostname, port });
-		try {
-			await proxySocket.opened;
-			const socket = new TlsClient(proxySocket, { serverName: tlsServerName, insecure: true, allowChacha });
-			await socket.handshake();
-			log(`[HTTPS代理] TLS版本: ${socket.isTls13 ? '1.3' : '1.2'} | Cipher: 0x${socket.cipherSuite.toString(16)}${socket.cipherConfig?.chacha ? ' (ChaCha20)' : ' (AES-GCM)'}`);
-			return socket;
-		} catch (error) {
-			try { proxySocket.close() } catch (e) { }
-			throw error;
-		}
-	};
-	try {
-		try {
-			tlsSocket = await 打开HTTPS代理TLS(false);
-		} catch (error) {
-			if (!/cipher|handshake|TLS Alert|ServerHello|Finished|Unsupported|Missing TLS/i.test(error?.message || `${error || ''}`)) throw error;
-			log(`[HTTPS代理] AES-GCM TLS 握手失败，回退 ChaCha20 兼容模式: ${error?.message || error}`);
-			tlsSocket = await 打开HTTPS代理TLS(true);
-		}
-
-		const auth = username && password ? `Proxy-Authorization: Basic ${btoa(`${username}:${password}`)}\r\n` : '';
-		const request = `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\n${auth}User-Agent: Mozilla/5.0\r\nConnection: keep-alive\r\n\r\n`;
-		await tlsSocket.write(encoder.encode(request));
-
-		let responseBuffer = new Uint8Array(0), headerEndIndex = -1, bytesRead = 0;
-		while (headerEndIndex === -1 && bytesRead < 8192) {
-			const value = await tlsSocket.read();
-			if (!value) throw new Error('HTTPS 代理在返回 CONNECT 响应前关闭连接');
-			responseBuffer = 拼接字节数据(responseBuffer, value);
-			bytesRead = responseBuffer.length;
-			const crlfcrlf = responseBuffer.findIndex((_, i) => i < responseBuffer.length - 3 && responseBuffer[i] === 0x0d && responseBuffer[i + 1] === 0x0a && responseBuffer[i + 2] === 0x0d && responseBuffer[i + 3] === 0x0a);
-			if (crlfcrlf !== -1) headerEndIndex = crlfcrlf + 4;
-		}
-
-		if (headerEndIndex === -1) throw new Error('HTTPS 代理 CONNECT 响应头过长或无效');
-		const statusMatch = decoder.decode(responseBuffer.slice(0, headerEndIndex)).split('\r\n')[0].match(/HTTP\/\d\.\d\s+(\d+)/);
-		const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
-		if (!Number.isFinite(statusCode) || statusCode < 200 || statusCode >= 300) throw new Error(`Connection failed: HTTP ${statusCode}`);
-
-		if (有效数据长度(initialData) > 0) await tlsSocket.write(数据转Uint8Array(initialData));
-		const bufferedData = bytesRead > headerEndIndex ? responseBuffer.subarray(headerEndIndex, bytesRead) : null;
-		let closedSettled = false, resolveClosed, rejectClosed;
-		const settleClosed = (settle, value) => {
-			if (!closedSettled) {
-				closedSettled = true;
-				settle(value);
-			}
-		};
-		const closed = new Promise((resolve, reject) => {
-			resolveClosed = resolve;
-			rejectClosed = reject;
-		});
-		const close = () => {
-			try { tlsSocket.close() } catch (e) { }
-			settleClosed(resolveClosed);
-		};
-		const readable = new ReadableStream({
-			async start(controller) {
-				try {
-					if (有效数据长度(bufferedData) > 0) controller.enqueue(bufferedData);
-					while (true) {
-						const data = await tlsSocket.read();
-						if (!data) break;
-						if (data.byteLength > 0) controller.enqueue(data);
-					}
-					try { controller.close() } catch (e) { }
-					settleClosed(resolveClosed);
-				} catch (error) {
-					try { controller.error(error) } catch (e) { }
-					settleClosed(rejectClosed, error);
-				}
-			},
-			cancel() {
-				close();
-			}
-		});
-		const writable = new WritableStream({
-			async write(chunk) {
-				await tlsSocket.write(数据转Uint8Array(chunk));
-			},
-			close,
-			abort(error) {
-				close();
-				if (error) settleClosed(rejectClosed, error);
-			}
-		});
-		return { readable, writable, closed, close };
-	} catch (error) {
-		try { tlsSocket?.close() } catch (e) { }
-		throw error;
-	}
+ return httpConnect(targetHost, targetPort, initialData, true, TCP连接, parsedSocks5);
 }
 
-function 创建请求TCP连接器(request) {
-	const 请求对象 = /** @type {any} */ (request);
-	const fetcher = 请求对象?.fetcher;
-	if (!fetcher || typeof fetcher.connect !== 'function') throw new Error('request.fetcher.connect unavailable');
-	return (options, init) => init === undefined ? fetcher.connect(options) : fetcher.connect(options, init);
+function 创建请求TCP连接器(request, connector = cloudflareConnect) {
+ const deadline = Date.now() + 10000; let attempts = 0;
+ return (options, init) => {
+  if (++attempts > 8 || Date.now() >= deadline) throw new Error('出站连接预算耗尽');
+  return connector(options, init);
+ };
 }
+
+// 覆盖 SOCKS/HTTP 协商的总时限，网络对端不回包时也能释放 socket。
+async function 有限代理握手(action, connector, timeoutMs = 10000) {
+ const sockets = new Set(); let expired = false, timer;
+ const scopedConnect = (...args) => {
+  if (expired) throw new Error('代理握手超时');
+  const socket = connector(...args); sockets.add(socket); return socket;
+ };
+ const task = action(scopedConnect);
+ try {
+  return await Promise.race([task, new Promise((_, reject) => { timer = setTimeout(() => {
+   expired = true; for (const s of sockets) Promise.resolve(s.close()).catch(()=>{});
+   reject(new Error('代理握手超时'));
+  }, timeoutMs); })]);
+ } finally { clearTimeout(timer); task.then(s=>{if(expired) return s?.close?.();}).catch(()=>{}); }
+}
+
+function socks5Connect(host, port, data, connector, proxy) { return 有限代理握手(c => socks5ConnectRaw(host, port, data, c, proxy), connector); }
+function httpConnect(host, port, data, tls, connector, proxy) { return 有限代理握手(c => httpConnectRaw(host, port, data, tls, c, proxy), connector); }
+
+export { httpConnect, isSpeedTestSite, socks5Connect, 创建请求TCP连接器, 有限代理握手, 构造WS本地204响应, 构造本地204响应 };

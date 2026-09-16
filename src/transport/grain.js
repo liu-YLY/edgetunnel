@@ -1,17 +1,7 @@
-/*# anchor: 原 _worker.js L2507-3095 */
-function closeSocketQuietly(socket) {
-	try {
-		if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING) {
-			socket.close();
-		}
-	} catch (error) { }
-}
-
-function formatIdentifier(arr, offset = 0) {
-	const hex = [...arr.slice(offset, offset + 16)].map(b => b.toString(16).padStart(2, '0')).join('');
-	return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}`;
-}
-
+import { 数据转Uint8Array } from '../core/bytes.js';
+import { 上行合包目标字节, 上行队列最大字节, 上行队列最大条目, 下行Grain低水位字节, 下行Grain包字节, 下行Grain尾部阈值, 下行Grain最大等待轮次 } from '../core/constants.js';
+import { log } from '../core/context.js';
+import { closeSocketQuietly } from './lifecycle.js';
 async function WebSocket发送并等待(webSocket, payload) {
 	const sendResult = webSocket.send(payload);
 	if (sendResult && typeof sendResult.then === 'function') await sendResult;
@@ -588,3 +578,4 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 	closeSocketQuietly(webSocket);
 }
 
+export { WebSocket发送并等待, connectStreams, 创建上行Grain合包流, 创建上行写入队列 };

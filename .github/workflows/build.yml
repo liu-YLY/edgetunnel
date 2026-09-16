@@ -9,11 +9,20 @@ on:
       - 'build.js'
       - 'scripts/**'
       - 'package.json'
+      - 'package-lock.json'
+      - '_worker.js'
+      - 'wrangler.toml'
+      - '.github/workflows/**'
   pull_request:
     paths:
       - 'src/**'
       - 'build.js'
       - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '_worker.js'
+      - 'wrangler.toml'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -28,10 +37,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Reproducibility & structure check
-        run: node scripts/verify.js
-      - name: Config layer golden tests
-        run: node scripts/test-config.js
-      - name: Subscription client golden tests
-        run: node scripts/test-subscribe.js
+          node-version: 22
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:runtime
+      - run: npm run deploy:check

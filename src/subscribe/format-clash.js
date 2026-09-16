@@ -1,5 +1,3 @@
-/*# anchor: 原 _worker.js L4809-5026 */
-
 function Clash订阅配置文件热补丁(Clash_原始订阅内容, config_JSON = {}) {
 	const uuid = config_JSON?.UUID || null;
 	const ECH启用 = Boolean(config_JSON?.ECH);
@@ -217,3 +215,4 @@ function Clash订阅配置文件热补丁(Clash_原始订阅内容, config_JSON 
 	return processedLines.join('\n');
 }
 
+export { Clash订阅配置文件热补丁 };

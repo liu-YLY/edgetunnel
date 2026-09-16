@@ -1,5 +1,16 @@
-/*# anchor: 原 _worker.js L2169-2506 */
+import { 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
+import { 特征码字典 } from '../core/constants.js';
+import { log, 当前请求配置 } from '../core/context.js';
+import { isIPHostname, isIPv4 } from '../core/network.js';
+import { 解析地址端口 } from './address.js';
+import { httpConnect, socks5Connect, 创建请求TCP连接器 } from './dial.js';
+import { DoH查询 } from './doh.js';
+import { connectStreams } from './grain.js';
+import { closeSocketQuietly, 开始TCP连接世代 } from './lifecycle.js';
+import { sstpConnect, turnConnect } from './proxy.js';
+import { 提取木马反代握手数据, 连接木马反代 } from './trojan-relay.js';
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, yourUUID, request = null, 反代上下文 = {}, 允许木马反代 = false, 木马反代首包数据 = null, 仅建立连接 = false) {
+	const { TCP并发拨号数, 反代并发拨号数, 预加载竞速拨号, SOCKS5白名单 } = 当前请求配置();
 	const ctx反代IP = 反代上下文.反代IP || '';
 	const ctx代理类型 = 反代上下文.代理类型 !== undefined ? 反代上下文.代理类型 : null;
 	const ctx代理全局 = 反代上下文.代理全局 !== undefined ? 反代上下文.代理全局 : false;
@@ -47,10 +58,9 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	};
 
 	async function 等待连接建立(remoteSock, timeoutMs = 连接超时毫秒) {
-		await Promise.race([
-			remoteSock.opened,
-			new Promise((_, reject) => setTimeout(() => reject(new Error('连接超时')), timeoutMs))
-		]);
+		let timer;
+		try { await Promise.race([remoteSock.opened, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('连接超时')), timeoutMs); })]); }
+		finally { clearTimeout(timer); }
 	}
 
 	async function 打开TCP连接(address, port) {
@@ -181,42 +191,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 		}
 	}
 
-	// ============ M2-P0-1 auto 模式：官方地址多候选直连 ============
-	// 语义与 connectProxyIP 一致（连接候选 -> 写首包），仅候选来源换成内置官方 IP 池：
-	// 每次打乱顺序（避免固定第一个被墙后全灭），复用 并发打开候选连接 分批竞速，
-	// 全部失败后按 反代兜底 开关回落 connectDirect 原始目标或抛错。
-	async function 连接官方直连地址(目标域名, 目标端口, data = null, 官方地址池 = [], 启用兜底 = true) {
-		if (!官方地址池?.length) return connectDirect(目标域名, 目标端口, data, false);
-		const 候选副本 = [...官方地址池];
-		for (let i = 候选副本.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[候选副本[i], 候选副本[j]] = [候选副本[j], 候选副本[i]];
-		}
-		const 实际并发数 = Math.max(1, Math.floor(Number(反代并发拨号数) || 1));
-		for (let i = 0; i < 候选副本.length; i += 实际并发数) {
-			const 候选列表 = [];
-			for (let j = 0; j < 实际并发数 && i + j < 候选副本.length; j++) {
-				候选列表.push({ hostname: 候选副本[i + j], port: 官方直连端口, index: i + j });
-			}
-			let socket = null, candidate = null;
-			try {
-				log(`[官方直连] 并发尝试 ${候选列表.length} 路: ${候选列表.map(候选 => `${候选.hostname}:${候选.port}`).join(', ')} | 目标: ${目标域名}:${目标端口}`);
-				const 连接结果 = await 并发打开候选连接(候选列表);
-				socket = 连接结果.socket;
-				candidate = 连接结果.candidate;
-				await 写入首包(socket, data);
-				log(`[官方直连] 成功连接到: ${candidate.hostname}:${candidate.port} (索引: ${candidate.index})`);
-				反代数组索引 = candidate.index;
-				return socket;
-			} catch (err) {
-				try { socket?.close?.() } catch (e) { }
-				log(`[官方直连] 本批连接失败: ${err.message || err}`);
-			}
-		}
-		log(`[官方直连] 全部 ${候选副本.length} 个官方地址连接失败${启用兜底 ? '，回落直连原始目标' : ''}`);
-		if (启用兜底) return connectDirect(目标域名, 目标端口, data, false);
-		throw new Error(`[官方直连] 全部 ${候选副本.length} 个官方地址连接失败，且未启用兜底，连接终止。`);
-	}
 
 	async function connecttoPry(允许发送首包 = true) {
 		if (remoteConnWrapper.connectingPromise) {
@@ -252,9 +226,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 					newSocket = await httpConnect(host, portNum, 本次首包数据, false, TCP连接, ctx代理参数);
 				} else if (ctx代理类型 === 'https') {
 					log(`[HTTPS代理] 代理到: ${host}:${portNum}`);
-					newSocket = isIPHostname(ctx代理参数.hostname)
-						? await httpsConnect(host, portNum, 本次首包数据, TCP连接, ctx代理参数)
-						: await httpConnect(host, portNum, 本次首包数据, true, TCP连接, ctx代理参数);
+					newSocket = await httpConnect(host, portNum, 本次首包数据, true, TCP连接, ctx代理参数);
 				} else if (ctx代理类型 === 'turn') {
 					log(`[TURN代理] 代理到: ${host}:${portNum}`);
 					newSocket = await turnConnect(ctx代理参数, host, portNum, TCP连接);
@@ -272,12 +244,9 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 						finally { try { writer.releaseLock() } catch (e) { } }
 					}
 				} else {
-					const 出站模式 = 反代上下文.出站模式 || 'auto';
-					if (!ctx反代IP && 出站模式 === 'auto' && 反代上下文.官方地址池?.length) {
-						// M2-P0-1：auto 模式且无手填反代IP -> 内置官方地址多候选直连（零第三方域名依赖）
-						log(`[官方直连] auto 模式出站: ${host}:${portNum}`);
-						newSocket = await 连接官方直连地址(host, portNum, 本次首包数据, 反代上下文.官方地址池, ctx反代兜底);
-					} else {
+					if (!ctx反代IP) {
+                        throw new Error('目标直连失败，未配置可用代理出口');
+                    } else {
 						log(`[反代连接] 代理到: ${host}:${portNum}`);
 						const 所有反代数组 = await 解析地址端口(ctx反代IP, host, yourUUID);
 						newSocket = await connectProxyIP(`${特征码字典[0]}.tp1.${特征码字典[2]}.xyz`, 1, 本次首包数据, 所有反代数组, ctx反代兜底);
@@ -341,43 +310,4 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	}
 }
 
-async function forwardataudp(udpChunk, webSocket, respHeader, request, 响应封装器 = null) {
-	const 请求数据 = 数据转Uint8Array(udpChunk);
-	const 请求字节数 = 请求数据.byteLength;
-	log(`[UDP转发] 收到 DNS 请求: ${请求字节数}B -> 8.8.4.4:53`);
-	try {
-		const TCP连接 = 创建请求TCP连接器(request);
-		const tcpSocket = TCP连接({ hostname: '8.8.4.4', port: 53 });
-		let 魏烈思Header = respHeader;
-		const writer = tcpSocket.writable.getWriter();
-		await writer.write(请求数据);
-		log(`[UDP转发] DNS 请求已写入上游: ${请求字节数}B`);
-		writer.releaseLock();
-		await tcpSocket.readable.pipeTo(new WritableStream({
-			async write(chunk) {
-				const 原始响应 = 数据转Uint8Array(chunk);
-				log(`[UDP转发] 收到 DNS 响应: ${原始响应.byteLength}B`);
-				const 封装结果 = 响应封装器 ? await 响应封装器(原始响应) : 原始响应;
-				const 发送片段列表 = Array.isArray(封装结果) ? 封装结果 : [封装结果];
-				if (!发送片段列表.length) return;
-				if (webSocket.readyState !== WebSocket.OPEN) return;
-				for (const fragment of 发送片段列表) {
-					const 转发响应 = 数据转Uint8Array(fragment);
-					if (!转发响应.byteLength) continue;
-					if (魏烈思Header) {
-						const response = new Uint8Array(魏烈思Header.length + 转发响应.byteLength);
-						response.set(魏烈思Header, 0);
-						response.set(转发响应, 魏烈思Header.length);
-						await WebSocket发送并等待(webSocket, response.buffer);
-						魏烈思Header = null;
-					} else {
-						await WebSocket发送并等待(webSocket, 转发响应);
-					}
-				}
-			},
-		}));
-	} catch (error) {
-		log(`[UDP转发] DNS 转发失败: ${error?.message || error}`);
-	}
-}
-
+export { forwardataTCP };
