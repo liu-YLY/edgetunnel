@@ -49,6 +49,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 			TLS: true,
 		},
 		Fingerprint: "chrome",
+		ALPN: "", // 空则不生成 alpn 参数；可设 h2 / http/1.1 等（来源于上游 cmliu 移植）
 		优选订阅生成: {
 			local: true, // true: 基于本地的优选地址  false: 优选订阅生成器
 			本地IP库: {

@@ -39,3 +39,4 @@ yarn-error.log*
 log/
 .dev.vars
 .dev.vars.*
+/.uploads/

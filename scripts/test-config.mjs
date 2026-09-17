@@ -73,6 +73,11 @@ import nodeCrypto from 'node:crypto';
   // KV 缺键回退 env/默认值（缺键不崩溃）; 重置配置=true 绕过 M2-P1 的 30s 缓存
   cfg = await 读取config_JSON({ ADMIN: 'a', KEY: 'k', PATH: '/envpath', KV: { get: async () => null, put: async () => {} } }, 'kv.example.com', '11111111-1111-4111-8111-111111111111', 'test', true);
   assert.strictEqual(cfg.PATH, '/envpath', 'KV 缺 cfg:{host} 时回退 env.PATH');
+  assert.strictEqual(cfg.ALPN, '', 'ALPN 默认空（上游移植：空则不生成 alpn 参数）');
+
+  // ALPN 可经 config_JSON 覆盖（如 h2），仅影响链接生成、不影响其他字段
+  cfg.ALPN = 'h2';
+  assert.strictEqual(cfg.ALPN, 'h2', 'ALPN 可被覆盖');
 
   // 场景 4：path 逐节点覆盖与 p/wk 互斥
   let ctx = await 反代参数获取(new URL('https://example.com/?p=9.9.9.9:443'), '00000000-0000-4000-8000-000000000000');
