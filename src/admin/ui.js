@@ -134,6 +134,7 @@ function 管理面板HTML(env, config_JSON) {
 </nav>
 
 <section class="page on" data-page="overview">
+  <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
   <div class="card">
     <h2>请求用量</h2>
     <div class="hero">
@@ -156,9 +157,11 @@ function 管理面板HTML(env, config_JSON) {
       </div>
     </div>
   </div>
+  <div class="badges" id="badges"></div>
   <div class="card">
     <h2>近 30 天用量趋势</h2>
     <div id="chart"><p class="dim">加载中…</p></div>
+    <div id="chart-tip" role="tooltip"></div>
   </div>
   <div class="card">
     <h2>访问日志</h2>
@@ -273,6 +276,30 @@ function 管理面板HTML(env, config_JSON) {
   }
   function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : String(n || 0); }
 
+  // 概览增强：实时时钟（Task2）
+  function tickClock() {
+    var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
+    var local = $('#clock-local'); if (local) local.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    var utc = $('#clock-utc'); if (utc) utc.textContent = 'UTC ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+  }
+  setInterval(tickClock, 1000);
+
+  // 概览增强：状态徽章（Task2，textContent 防 XSS）
+  function renderBadges() {
+    var box = $('#badges'); if (!box) return;
+    var rows = [
+      ['协议类型', S.协议类型], ['传输协议', S.传输协议], ['gRPC模式', S.gRPC模式], ['Fingerprint', S.Fingerprint],
+      ['出站', S.出站], ['反代', S.反代], ['ECH', S.ECH ? '开' : '关'], ['启用0RTT', S.启用0RTT ? '开' : '关']
+    ];
+    box.innerHTML = '';
+    rows.forEach(function (p) {
+      var b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = p[0] + ': ' + (p[1] === undefined ? '' : p[1]);
+      box.appendChild(b);
+    });
+  }
+
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
   tabs.forEach(function (btn) {
@@ -299,11 +326,28 @@ function 管理面板HTML(env, config_JSON) {
       rows.forEach(function (r, i) {
         var h = Math.max(2, ((r.total || 0) / maxV) * (H - pad * 2));
         var x = pad + i * bw, y = H - pad - h;
-        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" fill="#2f81f7"><title>' + r.date + ': ' + fmt(r.total) + '</title></rect>';
+        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" fill="#6e8bff" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
         if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" fill="#8b93a7" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
+      bindBarTips(box.querySelector('svg'));
     }).catch(function (e) { var box = $('#chart'); if (box) box.innerHTML = '<p class="dim">用量历史不可用：' + e.message + '</p>'; });
+  }
+
+  // 概览增强：趋势图 hover tooltip（Task2）
+  function bindBarTips(svg) {
+    if (!svg) return;
+    var tip = $('#chart-tip'); if (!tip) return;
+    Array.prototype.slice.call(svg.querySelectorAll('rect[data-date]')).forEach(function (rect) {
+      rect.addEventListener('mousemove', function (ev) {
+        var rc = svg.getBoundingClientRect();
+        tip.textContent = rect.getAttribute('data-date') + ': ' + fmt(Number(rect.getAttribute('data-val')));
+        tip.style.display = 'block';
+        tip.style.left = (ev.clientX - rc.left + 12) + 'px';
+        tip.style.top = (ev.clientY - rc.top - 30) + 'px';
+      });
+      rect.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+    });
   }
 
   // 节点与订阅
@@ -396,7 +440,7 @@ function 管理面板HTML(env, config_JSON) {
     api('/admin/init', { method: 'POST' }).then(function (r) { toast('配置已重置', true); loadConfig(); }).catch(function (e) { toast('重置失败：' + e.message, false); });
   });
 
-  loadOverview(); loadNodes(); loadConfig(); loadOps();
+  renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
 })();
 </script>
 </body>

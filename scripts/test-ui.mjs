@@ -26,6 +26,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含主题标记 ${标记}`);
   }
 
+  // 1.2) 概览增强元素标记（Task2：时钟 / 徽章 / 趋势 tooltip）
+  for (const id of ['id="clock"', 'id="clock-local"', 'id="clock-utc"', 'id="badges"', 'id="chart-tip"']) {
+    assert.ok(html.includes(id), `HTML 应包含概览增强元素 ${id}`);
+  }
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,
