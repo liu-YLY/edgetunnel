@@ -163,6 +163,96 @@ const 客户端脚本 = `
   });
   $('#cmdk').addEventListener('click', function (e) { if (e.target === this) 关闭弹层($('#cmdk')); });
 
+  // —— 配置内联校验：镜像服务端 validation.js，仅预检，不替代服务端校验 ——
+  var 枚举表 = { 协议类型: ['vless', 'trojan', 'ss'], 传输协议: ['ws', 'grpc', 'xhttp'], gRPC模式: ['gun', 'multi'], 'SS.加密方式': ['aes-128-gcm', 'aes-256-gcm'] };
+  function 校验配置对象(o, path, depth, errs) {
+    path = path || ''; depth = depth || 0; errs = errs || [];
+    if (depth > 12) { errs.push('配置嵌套过深'); return errs; }
+    if (o && typeof o === 'object') {
+      for (var k in o) {
+        if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+        if (['__proto__', 'constructor', 'prototype'].indexOf(k) >= 0) { errs.push('禁止的配置字段: ' + (path ? path + '.' : '') + k); continue; }
+        var v = o[k], p = path ? path + '.' + k : k;
+        if (typeof v === 'string' && v.length > 8192) errs.push(p + ' 字符串过长（≤8192）');
+        if (Array.isArray(v) && v.length > 512) errs.push(p + ' 数组过长（≤512）');
+        if (枚举表[p] && 枚举表[p].indexOf(v) < 0) errs.push(p + ' 取值必须是 ' + 枚举表[p].join(' / '));
+        if (p === 'PATH' && (typeof v !== 'string' || v.charAt(0) !== '/')) errs.push('PATH 必须以 / 开头');
+        if (p === '优选订阅生成.SUBUpdateTime' && !(typeof v === 'number' && v >= 1 && v <= 168)) errs.push('SUBUpdateTime 必须是 1–168 之间的数字');
+        if (p === '优选订阅生成.本地IP库.随机数量' && !(Number.isInteger(v) && v >= 1 && v <= 100)) errs.push('随机数量必须是 1–100 的整数');
+        if (p === '优选订阅生成.本地IP库.指定端口' && !(Number.isInteger(v) && (v === -1 || (v >= 1 && v <= 65535)))) errs.push('指定端口必须是 -1 或 1–65535');
+        if (p === 'HOSTS' && (!Array.isArray(v) || !v.length || v.some(function (x) { return typeof x !== 'string' || /[\\s/@?#]/.test(x); }))) errs.push('HOSTS 必须是非空字符串数组且不含空白 / @ ? #');
+        校验配置对象(v, p, depth + 1, errs);
+      }
+    }
+    return errs;
+  }
+  function 校验编辑器() {
+    var box = $('#cfg-check'), ta = $('#cfg');
+    var errs = [], obj = null, 解析失败 = false;
+    var raw = ta.value.trim();
+    if (!raw) { box.innerHTML = '<span class="dim">点击「重新加载」获取当前生效配置…</span>'; return { ok: false, obj: null, errs: ['配置为空'] }; }
+    try { obj = JSON.parse(raw); } catch (e) { 解析失败 = true; errs.push('JSON 解析失败：' + e.message); }
+    if (!解析失败) {
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) errs = errs.concat(校验配置对象(obj, '', 0, []));
+      else errs.push('配置必须是对象');
+    }
+    box.innerHTML = errs.length
+      ? errs.map(function (e) { return '<span class="bad">✕ ' + 转义文本(e) + '</span>'; }).join('')
+      : '<span class="good">✓ JSON 合法，字段校验通过</span>';
+    var btn = $('#btn-save-json');
+    if (btn) btn.disabled = errs.length > 0;
+    return { ok: !errs.length, obj: obj, errs: errs };
+  }
+
+  // —— 保存前差异预览（本地计算，先确认再写 KV） ——
+  var 已加载配置文本 = '';
+  function 生成差异(旧文本, 新文本) {
+    var a = 旧文本 ? 旧文本.split('\\n') : [], b = 新文本 ? 新文本.split('\\n') : [];
+    // 简单 LCS 前缀/后缀裁剪，中间整段标记增删，够用且无依赖
+    var i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    var j = 0; while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+    var out = [], add = 0, del = 0, k;
+    for (k = 0; k < i; k++) out.push('  ' + 转义文本(a[k]));
+    for (k = i; k < a.length - j; k++) { out.push('<span class="del">- ' + 转义文本(a[k]) + '</span>'); del++; }
+    for (k = i; k < b.length - j; k++) { out.push('<span class="add">+ ' + 转义文本(b[k]) + '</span>'); add++; }
+    for (k = a.length - j; k < a.length; k++) out.push('  ' + 转义文本(a[k]));
+    return { html: out.join('\\n') || '<span class="dim">（无变化）</span>', add: add, del: del };
+  }
+  var 待保存配置 = null;
+  function 请求保存配置() {
+    var r = 校验编辑器();
+    if (!r.ok) { toast('配置有 ' + r.errs.length + ' 处问题，已阻止保存', false); return; }
+    var d = 生成差异(已加载配置文本, $('#cfg').value);
+    $('#diff-view').innerHTML = d.html;
+    $('#diff-count').textContent = '+' + d.add + ' / -' + d.del;
+    待保存配置 = r.obj;
+    打开弹层($('#diff-modal'));
+  }
+  function 写入配置() {
+    if (!待保存配置) return;
+    api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(待保存配置) })
+      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); 已加载配置文本 = $('#cfg').value; 清草稿(); 校验编辑器(); })
+      .catch(function (e) { statusCfg('保存失败：' + e.message); toast('保存失败：' + e.message, false); })
+      .then(function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
+  }
+
+  // —— 编辑器草稿（localStorage）与撤销/重做 ——
+  var 草稿键 = 'et_admin_draft_cfg';
+  var 撤销栈 = [], 重做栈 = [];
+  function 压栈(旧值) { if (旧值 === $('#cfg').value) return; 撤销栈.push(旧值); if (撤销栈.length > 50) 撤销栈.shift(); 重做栈.length = 0; }
+  function 撤销() { if (!撤销栈.length) return; 重做栈.push($('#cfg').value); $('#cfg').value = 撤销栈.pop(); 校验编辑器(); 存草稿(); }
+  function 重做() { if (!重做栈.length) return; 撤销栈.push($('#cfg').value); $('#cfg').value = 重做栈.pop(); 校验编辑器(); 存草稿(); }
+  function 存草稿() { try { localStorage.setItem(草稿键, $('#cfg').value); } catch (e) {} }
+  function 清草稿() { try { localStorage.removeItem(草稿键); } catch (e) {} }
+  var 草稿定时 = null;
+  function 防抖存草稿() { clearTimeout(草稿定时); 草稿定时 = setTimeout(存草稿, 1000); }
+  function 恢复草稿提示() {
+    var d = null; try { d = localStorage.getItem(草稿键); } catch (e) {}
+    if (!d || d === $('#cfg').value) return;
+    if (confirm('检测到未保存的草稿，是否恢复到编辑器？（取消则丢弃）')) { 压栈($('#cfg').value); $('#cfg').value = d; 校验编辑器(); }
+    else 清草稿();
+  }
+
   // 概览增强：实时时钟（Task2）
   function tickClock() {
     var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
@@ -295,6 +385,7 @@ const 客户端脚本 = `
   function loadConfig() {
     api('/admin/config.json').then(function (cfg) {
       $('#cfg').value = JSON.stringify(cfg, null, 2);
+      已加载配置文本 = $('#cfg').value; 校验编辑器(); 恢复草稿提示();
       var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
       var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
       $('#c-PATH').value = cfg.PATH || '';
@@ -307,13 +398,12 @@ const 客户端脚本 = `
   }
   function statusCfg(m) { var s = $('#cfg-status'); if (s) s.textContent = m; }
   $('#btn-load-json').addEventListener('click', function () { loadConfig(); statusCfg(''); });
-  $('#btn-save-json').addEventListener('click', function () {
-    var obj; try { obj = JSON.parse($('#cfg').value); } catch (e) { statusCfg('JSON 解析失败：' + e.message); return; }
-    statusCfg('正在保存…');
-    api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) })
-      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); })
-      .catch(function (e) { statusCfg('保存失败：' + e.message); });
-  });
+  $('#btn-save-json').addEventListener('click', 请求保存配置);
+  $('#btn-diff-cancel').addEventListener('click', function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
+  $('#btn-diff-confirm').addEventListener('click', 写入配置);
+  $('#cfg').addEventListener('input', function () { 校验编辑器(); 防抖存草稿(); });
+  $('#cfg').addEventListener('focus', function () { 压栈($('#cfg').value); });
+  $('#cfg').addEventListener('keydown', function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? 重做() : 撤销(); } });
   $('#btn-restore').addEventListener('click', function () {
     if (!confirm('恢复上一版本将覆盖当前配置，继续？')) return;
     api('/admin/config/restore', { method: 'POST' }).then(function (r) { statusCfg('已提交：' + (r.message || '')); }).catch(function (e) { statusCfg('恢复失败：' + e.message); });

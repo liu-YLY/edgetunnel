@@ -66,6 +66,7 @@ d.setAttribute('data-motion',m);
 <div id="toast" role="status" aria-live="polite"></div>
 ${快捷键帮助浮层()}
 ${命令面板()}
+${差异浮层()}
 <div class="wrap" id="top">
 ${页头(sse)}
 ${主导航()}
@@ -105,6 +106,19 @@ function 命令面板() {
     <input id="cmd-input" type="text" placeholder="输入动作名称…（↑↓ 选择，Enter 执行，Esc 关闭）" autocomplete="off" spellcheck="false" />
     <div class="list" id="cmd-list" role="listbox"></div>
     <div class="empty" id="cmd-empty" style="display:none">无匹配动作</div>
+  </div>
+</div>`;
+}
+
+function 差异浮层() {
+  return `<div id="diff-modal" role="dialog" aria-modal="true" aria-label="保存前差异预览">
+  <div class="box">
+    <div class="row" style="justify-content:space-between"><b>保存前差异预览</b><span class="dim" id="diff-count"></span></div>
+    <div id="diff-view"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button type="button" class="btn ghost" id="btn-diff-cancel">取消</button>
+      <button type="button" class="btn" id="btn-diff-confirm">确认保存</button>
+    </div>
   </div>
 </div>`;
 }
