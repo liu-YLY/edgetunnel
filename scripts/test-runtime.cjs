@@ -51,7 +51,8 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   // P2 后端自检：/admin/api/self-check（quick 与 deep）与 /admin/api/tcp-check 参数校验。
   const sc = await call('/admin/api/self-check',{headers:{Cookie:cookie}});assert.equal(sc.status,200);
   const scBody = await sc.json();assert.ok(scBody && scBody.quick);
-  for (const k of ['国内','国外','cf','ip']) assert.ok(k in scBody.quick,`self-check quick 缺 ${k}`);
+  for (const k of ['国内','国外','cf','twitter','chatgpt','ip']) assert.ok(k in scBody.quick,`self-check quick 缺 ${k}`);
+  for (const k of ['twitter','chatgpt']) assert.ok('可达' in scBody.quick[k],`self-check ${k} 缺 可达 字段`);
   const scDeep = await call('/admin/api/self-check?deep=1',{headers:{Cookie:cookie}});assert.equal(scDeep.status,200);
   const scDeepBody = await scDeep.json();assert.ok(scDeepBody && scDeepBody.deep);
   for (const k of ['复用率','超时预算']) assert.ok(k in scDeepBody.deep,`self-check deep 缺 ${k}`);

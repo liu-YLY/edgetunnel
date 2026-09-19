@@ -88,7 +88,10 @@ td.mn{width:200px;color:var(--mut)}
 @keyframes chk-slide{0%{margin-left:-34%}100%{margin-left:100%}}
 .chk-sum{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-.chk{min-height:118px;margin:0}
+.chk{min-height:118px;margin:0;transition:border-color .18s,transform .18s}
+.chk:hover{border-color:color-mix(in srgb,var(--acc) 55%,transparent);transform:translateY(-1px)}
+.chk-legend{margin:0 0 14px;font-size:12px}
+.chk-legend b{color:var(--acc2);font-weight:600}
 .chk-wide{grid-column:1/-1}
 .chk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .chk-name{font-size:12px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}

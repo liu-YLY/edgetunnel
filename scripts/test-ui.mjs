@@ -43,7 +43,7 @@ import assert from 'node:assert/strict';
   }
 
   // 1.5) P2 自检 Tab / 代理连通测试 / 优选 IP 统计元素
-  for (const 标记 of ['id="page-check"', 'id="btn-run-check"', 'id="btn-run-deep"', 'id="btn-copy-check"', 'id="chk-overall"', 'id="chk-bar"', 'id="chk-err"', 'id="chk-cn-pill"', 'id="chk-cn-val"', 'id="chk-ip-pill"', 'id="chk-ip-val"', 'id="chk-deep-pill"', 'id="chk-deep-detail"', 'id="chk-summary"', 'id="btn-node-test"', 'id="n-proto"', 'id="n-test-uri"', 'id="n-test-result"', 'id="o-add-stats"', 'id="btn-o-test-add"', 'id="o-add-test-out"']) {
+  for (const 标记 of ['id="page-check"', 'id="btn-run-check"', 'id="btn-run-deep"', 'id="btn-copy-check"', 'id="chk-overall"', 'id="chk-bar"', 'id="chk-err"', 'id="chk-cn-pill"', 'id="chk-cn-val"', 'id="chk-ip-pill"', 'id="chk-ip-val"', 'id="chk-tw-pill"', 'id="chk-cg-pill"', 'id="chk-deep-pill"', 'id="chk-deep-detail"', 'id="chk-summary"', 'id="chk-legend"', 'id="btn-node-test"', 'id="n-proto"', 'id="n-test-uri"', 'id="n-test-result"', 'id="o-add-stats"', 'id="btn-o-test-add"', 'id="o-add-test-out"']) {
     assert.ok(html.includes(标记), `HTML 应包含 P2 元素 ${标记}`);
   }
   // 自检 Tab 的状态类名必须存在于样式中（warn/run 态缺样式会静默失效）

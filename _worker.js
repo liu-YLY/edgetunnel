@@ -657,7 +657,10 @@ td.mn{width:200px;color:var(--mut)}
 @keyframes chk-slide{0%{margin-left:-34%}100%{margin-left:100%}}
 .chk-sum{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-.chk{min-height:118px;margin:0}
+.chk{min-height:118px;margin:0;transition:border-color .18s,transform .18s}
+.chk:hover{border-color:color-mix(in srgb,var(--acc) 55%,transparent);transform:translateY(-1px)}
+.chk-legend{margin:0 0 14px;font-size:12px}
+.chk-legend b{color:var(--acc2);font-weight:600}
 .chk-wide{grid-column:1/-1}
 .chk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .chk-name{font-size:12px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
@@ -1286,7 +1289,7 @@ var 客户端脚本 = `
   });
 
   // —— 自检 Tab（GET /admin/api/self-check，?deep=1 含 deep） ——
-  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['ip', 'ip']];
+  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['tw', 'twitter'], ['cg', 'chatgpt'], ['ip', 'ip']];
   var 自检已跑 = false, 自检原始 = null, 自检计时器 = null;
 
   function 设徽章(sel, 类, 文案) {
@@ -1330,30 +1333,37 @@ var 客户端脚本 = `
       设徽章('#chk-' + prefix + '-pill', 'err', '无数据');
       if (值) 值.textContent = '—';
       设行容器('#chk-' + prefix + '-detail', [['说明', '服务端未返回该项', 'bad']]);
-      return { ok: false, ms: 0 };
+      return { ok: false, 警: 0, ms: 0 };
     }
     if (prefix === 'ip') {
       if (it.ok) {
         设徽章('#chk-ip-pill', 'ok', '正常');
         if (值) 值.textContent = it.ip || '—';
         设行容器('#chk-ip-detail', [['地区', it.地区 || '未知'], ['耗时', 数值(it.ms, ' ms')]]);
-        return { ok: true, ms: it.ms || 0 };
+        return { ok: true, 警: 0, ms: it.ms || 0 };
       }
       设徽章('#chk-ip-pill', 'err', '异常');
       if (值) 值.textContent = '不可达';
       设行容器('#chk-ip-detail', [['原因', it.error || '全部 IP 服务不可达', 'bad']]);
-      return { ok: false, ms: it.ms || 0 };
+      return { ok: false, 警: 0, ms: it.ms || 0 };
     }
+    // 三态：2xx–3xx 正常 / 有响应但异常状态码（如 403 反爬）→ 需关注 / 完全不可达
     if (it.ok) {
       设徽章('#chk-' + prefix + '-pill', 'ok', '正常');
       if (值) 值.textContent = 数值(it.ms, ' ms');
       设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['HTTP', 数值(it.status)]]);
-    } else {
-      设徽章('#chk-' + prefix + '-pill', 'err', '异常');
-      if (值) 值.textContent = '不可达';
-      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['原因', (it.error || '不可达') + (it.ms != null ? ' · ' + it.ms + ' ms' : ''), 'bad']]);
+      return { ok: true, 警: 0, ms: it.ms || 0 };
     }
-    return { ok: !!it.ok, ms: it.ms || 0 };
+    if (it.可达) {
+      设徽章('#chk-' + prefix + '-pill', 'warn', '可达 ' + it.status);
+      if (值) 值.textContent = 'HTTP ' + it.status;
+      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['说明', '网络可达但目标返回 ' + it.status + '（反爬/鉴权常见，非链路故障）', 'warn']]);
+      return { ok: false, 警: 1, ms: it.ms || 0 };
+    }
+    设徽章('#chk-' + prefix + '-pill', 'err', '异常');
+    if (值) 值.textContent = '不可达';
+    设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['原因', (it.error || '不可达') + (it.ms != null ? ' · ' + it.ms + ' ms' : ''), 'bad']]);
+    return { ok: false, 警: 0, ms: it.ms || 0 };
   }
 
   function 渲染深度值(deep) {
@@ -1428,20 +1438,21 @@ var 客户端脚本 = `
     取('/admin/api/self-check' + (深度 ? '?deep=1' : ''))
       .then(function (d) {
         自检原始 = d;
-        var 可达 = 0, 总数 = 0, 最慢 = 0;
+        var 可达 = 0, 需关注 = 0, 总数 = 0, 最慢 = 0;
         自检卡.forEach(function (k) {
           var r = 渲染自检项(k[0], (d && d.quick) ? d.quick[k[1]] : null);
-          总数++; if (r.ok) 可达++; if (r.ms > 最慢) 最慢 = r.ms;
+          总数++; if (r.ok) 可达++; if (r.警) 需关注++; if (r.ms > 最慢) 最慢 = r.ms;
         });
         var 深 = 渲染深度值(深度 && d ? d.deep : null);
         var 用时 = 结束进度(t0);
-        var 类 = 可达 === 总数 ? 'ok' : (可达 === 0 ? 'err' : 'warn');
-        var 文 = 可达 === 总数 ? '全部正常' : (可达 === 0 ? '全部不可达' : '部分异常');
+        var 类 = 可达 === 总数 && !需关注 ? 'ok' : (可达 === 0 ? 'err' : (需关注 ? 'warn' : 'warn'));
+        var 文 = 可达 === 总数 && !需关注 ? '全部正常' : (可达 === 0 ? '全部不可达' : (需关注 || 可达 < 总数 ? '部分需关注' : '部分异常'));
         if (深 && 深.坏) { 类 = 'err'; 文 = '通道异常'; }
         else if (深 && 深.警 && 类 === 'ok') { 类 = 'warn'; 文 = '需关注'; }
         设徽章('#chk-overall', 类, 文);
         var note = $('#chk-note'); if (note) note.textContent = (深度 ? '深度诊断完成' : '自检完成') + '（用时 ' + 用时 + ' s）';
-        if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 最慢 ' + 最慢 + ' ms' + (深 && 深.有 ? ' · 通道诊断 ' + (深.坏 ? '异常 ' + 深.坏 + ' 项' : (深.警 ? '需关注 ' + 深.警 + ' 项' : '正常')) : '');
+        var 汇总 = '正常 ' + 可达 + '/' + 总数 + (需关注 ? ' · 需关注 ' + 需关注 : '') + ' · 最慢 ' + 最慢 + ' ms';
+        if (sum) sum.textContent = 汇总 + (深 && 深.有 ? ' · 通道诊断 ' + (深.坏 ? '异常 ' + 深.坏 + ' 项' : (深.警 ? '需关注 ' + 深.警 + ' 项' : '正常')) : '');
         var at = $('#chk-at');
         if (at && d && d.at) { try { at.textContent = '检测于 ' + new Date(d.at).toLocaleString(); } catch (e) { at.textContent = ''; } }
       })
@@ -1743,12 +1754,23 @@ function 自检Tab() {
       <div class="chk-val" id="chk-cf-val">—</div>
       <div class="chk-kv dim" id="chk-cf-detail">点击“运行自检”查看</div>
     </div>
+    <div class="card chk" id="chk-tw">
+      <div class="chk-top"><span class="chk-name">Twitter / X</span><span class="pill" id="chk-tw-pill">未检测</span></div>
+      <div class="chk-val" id="chk-tw-val">—</div>
+      <div class="chk-kv dim" id="chk-tw-detail">点击“运行自检”查看</div>
+    </div>
+    <div class="card chk" id="chk-cg">
+      <div class="chk-top"><span class="chk-name">ChatGPT</span><span class="pill" id="chk-cg-pill">未检测</span></div>
+      <div class="chk-val" id="chk-cg-val">—</div>
+      <div class="chk-kv dim" id="chk-cg-detail">点击“运行自检”查看</div>
+    </div>
     <div class="card chk" id="chk-ip">
       <div class="chk-top"><span class="chk-name">落地 IP</span><span class="pill" id="chk-ip-pill">未检测</span></div>
       <div class="chk-val" id="chk-ip-val">—</div>
       <div class="chk-kv dim" id="chk-ip-detail">点击“运行自检”查看</div>
     </div>
   </div>
+  <p class="dim chk-legend" id="chk-legend">💡 各检测项含义：<b>国内</b> 由分流规则决定；<b>国外</b> 反映优选 IP 出口；<b>CF CDN</b>、<b>Twitter/X</b>、<b>ChatGPT</b> 走 Cloudflare 与目标站点，能体现代理落地可达性；<b>落地 IP</b> 是当前出口地址。</p>
   <div class="card chk chk-wide" id="chk-deep">
     <div class="chk-top">
       <span class="chk-name">通道诊断</span>
@@ -1760,7 +1782,7 @@ function 自检Tab() {
       <div class="chk-row"><b>伪装页</b><span>深度诊断未启用</span></div>
       <div class="chk-row"><b>反代建连</b><span>深度诊断未启用</span></div>
     </div>
-    <p class="dim" id="chk-deep-hint">深度诊断会真实建连采样（约 5–20 秒）；数据用于判断是否收紧握手超时预算与连接复用策略。</p>
+    <p class="dim" id="chk-deep-hint">通道诊断：真实建连采样的复用命中率、超时判定、伪装页与反代响应，用于判断是否调整握手超时预算与连接复用策略。（约 5–20 秒）</p>
   </div>
 </section>`;
 }
@@ -2526,13 +2548,14 @@ async function 快捷访达检查(name, url) {
     return {
       name,
       url,
+      可达: true,
       ok: 响应.status >= 200 && 响应.status < 400,
       status: 响应.status,
       ms: Date.now() - 起始
     };
   } catch (error) {
     const 是超时 = error?.name === "TimeoutError" || /timeout/i.test(String(error?.message || error));
-    return { name, url, ok: false, status: null, ms: Date.now() - 起始, error: 是超时 ? "timeout" : String(error?.message || error) };
+    return { name, url, 可达: false, ok: false, status: null, ms: Date.now() - 起始, error: 是超时 ? "timeout" : String(error?.message || error) };
   }
 }
 async function 落地IP识别() {
@@ -2596,10 +2619,12 @@ async function 伪装页(配置) {
 }
 async function 执行自检(request, env, 配置, 深度 = false) {
   const quick = {};
-  [quick["国内"], quick["国外"], quick["cf"]] = await Promise.all([
+  [quick["国内"], quick["国外"], quick["cf"], quick["twitter"], quick["chatgpt"]] = await Promise.all([
     快捷访达检查("国内", "https://www.baidu.com"),
     快捷访达检查("国外", "https://www.gstatic.com/generate_204"),
-    快捷访达检查("cf", "https://cp.cloudflare.com/generate_204")
+    快捷访达检查("cf", "https://cp.cloudflare.com/generate_204"),
+    快捷访达检查("twitter", "https://x.com"),
+    快捷访达检查("chatgpt", "https://chatgpt.com/")
   ]);
   quick["ip"] = await 落地IP识别();
   return { at: (/* @__PURE__ */ new Date()).toISOString(), quick, deep: 深度 ? { 伪装页: await 伪装页(配置) } : null };

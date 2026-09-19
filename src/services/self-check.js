@@ -4,6 +4,8 @@
 // 由 main.js 编排时挂到 deep 结果上。
 
 // quick 项：并行 fetch 检查某个外站的可达性。单项失败不抛错，统一记 { ok:false, error, ms }。
+// 可达：拿到任何 HTTP 响应即视为网络可达（403/401 也能证明 TCP+TLS+HTTP 栈通）；
+// ok：响应属于 2xx–3xx（对 baidu 等目标，403 反爬不应被当作"不可达"）。
 async function 快捷访达检查(name, url) {
 	const 起始 = Date.now();
 	try {
@@ -11,13 +13,14 @@ async function 快捷访达检查(name, url) {
 		return {
 			name,
 			url,
+			可达: true,
 			ok: 响应.status >= 200 && 响应.status < 400,
 			status: 响应.status,
 			ms: Date.now() - 起始,
 		};
 	} catch (error) {
 		const 是超时 = error?.name === 'TimeoutError' || /timeout/i.test(String(error?.message || error));
-		return { name, url, ok: false, status: null, ms: Date.now() - 起始, error: 是超时 ? 'timeout' : String(error?.message || error) };
+		return { name, url, 可达: false, ok: false, status: null, ms: Date.now() - 起始, error: 是超时 ? 'timeout' : String(error?.message || error) };
 	}
 }
 
@@ -85,10 +88,12 @@ async function 伪装页(配置) {
 
 export async function 执行自检(request, env, 配置, 深度 = false) {
 	const quick = {};
-	[quick['国内'], quick['国外'], quick['cf']] = await Promise.all([
+	[quick['国内'], quick['国外'], quick['cf'], quick['twitter'], quick['chatgpt']] = await Promise.all([
 		快捷访达检查('国内', 'https://www.baidu.com'),
 		快捷访达检查('国外', 'https://www.gstatic.com/generate_204'),
 		快捷访达检查('cf', 'https://cp.cloudflare.com/generate_204'),
+		快捷访达检查('twitter', 'https://x.com'),
+		快捷访达检查('chatgpt', 'https://chatgpt.com/'),
 	]);
 	quick['ip'] = await 落地IP识别();
 

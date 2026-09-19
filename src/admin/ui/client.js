@@ -603,7 +603,7 @@ const 客户端脚本 = `
   });
 
   // —— 自检 Tab（GET /admin/api/self-check，?deep=1 含 deep） ——
-  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['ip', 'ip']];
+  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['tw', 'twitter'], ['cg', 'chatgpt'], ['ip', 'ip']];
   var 自检已跑 = false, 自检原始 = null, 自检计时器 = null;
 
   function 设徽章(sel, 类, 文案) {
@@ -647,30 +647,37 @@ const 客户端脚本 = `
       设徽章('#chk-' + prefix + '-pill', 'err', '无数据');
       if (值) 值.textContent = '—';
       设行容器('#chk-' + prefix + '-detail', [['说明', '服务端未返回该项', 'bad']]);
-      return { ok: false, ms: 0 };
+      return { ok: false, 警: 0, ms: 0 };
     }
     if (prefix === 'ip') {
       if (it.ok) {
         设徽章('#chk-ip-pill', 'ok', '正常');
         if (值) 值.textContent = it.ip || '—';
         设行容器('#chk-ip-detail', [['地区', it.地区 || '未知'], ['耗时', 数值(it.ms, ' ms')]]);
-        return { ok: true, ms: it.ms || 0 };
+        return { ok: true, 警: 0, ms: it.ms || 0 };
       }
       设徽章('#chk-ip-pill', 'err', '异常');
       if (值) 值.textContent = '不可达';
       设行容器('#chk-ip-detail', [['原因', it.error || '全部 IP 服务不可达', 'bad']]);
-      return { ok: false, ms: it.ms || 0 };
+      return { ok: false, 警: 0, ms: it.ms || 0 };
     }
+    // 三态：2xx–3xx 正常 / 有响应但异常状态码（如 403 反爬）→ 需关注 / 完全不可达
     if (it.ok) {
       设徽章('#chk-' + prefix + '-pill', 'ok', '正常');
       if (值) 值.textContent = 数值(it.ms, ' ms');
       设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['HTTP', 数值(it.status)]]);
-    } else {
-      设徽章('#chk-' + prefix + '-pill', 'err', '异常');
-      if (值) 值.textContent = '不可达';
-      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['原因', (it.error || '不可达') + (it.ms != null ? ' · ' + it.ms + ' ms' : ''), 'bad']]);
+      return { ok: true, 警: 0, ms: it.ms || 0 };
     }
-    return { ok: !!it.ok, ms: it.ms || 0 };
+    if (it.可达) {
+      设徽章('#chk-' + prefix + '-pill', 'warn', '可达 ' + it.status);
+      if (值) 值.textContent = 'HTTP ' + it.status;
+      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['说明', '网络可达但目标返回 ' + it.status + '（反爬/鉴权常见，非链路故障）', 'warn']]);
+      return { ok: false, 警: 1, ms: it.ms || 0 };
+    }
+    设徽章('#chk-' + prefix + '-pill', 'err', '异常');
+    if (值) 值.textContent = '不可达';
+    设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['原因', (it.error || '不可达') + (it.ms != null ? ' · ' + it.ms + ' ms' : ''), 'bad']]);
+    return { ok: false, 警: 0, ms: it.ms || 0 };
   }
 
   function 渲染深度值(deep) {
@@ -745,20 +752,21 @@ const 客户端脚本 = `
     取('/admin/api/self-check' + (深度 ? '?deep=1' : ''))
       .then(function (d) {
         自检原始 = d;
-        var 可达 = 0, 总数 = 0, 最慢 = 0;
+        var 可达 = 0, 需关注 = 0, 总数 = 0, 最慢 = 0;
         自检卡.forEach(function (k) {
           var r = 渲染自检项(k[0], (d && d.quick) ? d.quick[k[1]] : null);
-          总数++; if (r.ok) 可达++; if (r.ms > 最慢) 最慢 = r.ms;
+          总数++; if (r.ok) 可达++; if (r.警) 需关注++; if (r.ms > 最慢) 最慢 = r.ms;
         });
         var 深 = 渲染深度值(深度 && d ? d.deep : null);
         var 用时 = 结束进度(t0);
-        var 类 = 可达 === 总数 ? 'ok' : (可达 === 0 ? 'err' : 'warn');
-        var 文 = 可达 === 总数 ? '全部正常' : (可达 === 0 ? '全部不可达' : '部分异常');
+        var 类 = 可达 === 总数 && !需关注 ? 'ok' : (可达 === 0 ? 'err' : (需关注 ? 'warn' : 'warn'));
+        var 文 = 可达 === 总数 && !需关注 ? '全部正常' : (可达 === 0 ? '全部不可达' : (需关注 || 可达 < 总数 ? '部分需关注' : '部分异常'));
         if (深 && 深.坏) { 类 = 'err'; 文 = '通道异常'; }
         else if (深 && 深.警 && 类 === 'ok') { 类 = 'warn'; 文 = '需关注'; }
         设徽章('#chk-overall', 类, 文);
         var note = $('#chk-note'); if (note) note.textContent = (深度 ? '深度诊断完成' : '自检完成') + '（用时 ' + 用时 + ' s）';
-        if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 最慢 ' + 最慢 + ' ms' + (深 && 深.有 ? ' · 通道诊断 ' + (深.坏 ? '异常 ' + 深.坏 + ' 项' : (深.警 ? '需关注 ' + 深.警 + ' 项' : '正常')) : '');
+        var 汇总 = '正常 ' + 可达 + '/' + 总数 + (需关注 ? ' · 需关注 ' + 需关注 : '') + ' · 最慢 ' + 最慢 + ' ms';
+        if (sum) sum.textContent = 汇总 + (深 && 深.有 ? ' · 通道诊断 ' + (深.坏 ? '异常 ' + 深.坏 + ' 项' : (深.警 ? '需关注 ' + 深.警 + ' 项' : '正常')) : '');
         var at = $('#chk-at');
         if (at && d && d.at) { try { at.textContent = '检测于 ' + new Date(d.at).toLocaleString(); } catch (e) { at.textContent = ''; } }
       })
