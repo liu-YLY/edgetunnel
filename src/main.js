@@ -26,7 +26,7 @@ import { Singbox订阅配置文件热补丁 } from './subscribe/format-singbox.j
 import { Surge订阅配置文件热补丁 } from './subscribe/format-surge.js';
 import { 生成V2rayN订阅 } from './subscribe/format-v2rayn.js';
 import { 生成节点链接文本, 获取订阅节点列表, 订阅转换器目标, 识别订阅类型 } from './subscribe/nodes.js';
-import { httpConnect, socks5Connect, 创建请求TCP连接器 } from './transport/dial.js';
+import { httpConnect, socks5Connect, 创建请求TCP连接器, TCP连接延迟 } from './transport/dial.js';
 import { sstpConnect, turnConnect } from './transport/proxy.js';
 ///////////////////////////////////////////////////////全局常量和工具函数///////////////////////////////////////////////
 
@@ -307,6 +307,16 @@ async function 处理请求(request, env, ctx, 配置) {
 						let 本地优选IP = await env.KV.get('ADD.txt') || 'null';
 						if (本地优选IP == 'null') 本地优选IP = (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口))[1];
 						return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
+					} else if (区分大小写访问路径 === 'admin/probe') {// M1-P2 面板测速：登录会话内 TCP 连通探测
+						const 目标 = String(url.searchParams.get('target') || '').trim();
+						const ipv4 = 目标.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})$/);
+						const ipv6 = 目标.match(/^\[([0-9a-fA-F:]+)\]:(\d{1,5})$/);
+						if (!ipv4 && !ipv6) return new Response(JSON.stringify({ error: '仅支持 IPv4/IPv6 端口格式，如 1.2.3.4:443 或 [::1]:443' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						const 主机 = ipv4 ? ipv4[1] : ipv6[1];
+						const 端口 = Number(ipv4 ? ipv4[2] : ipv6[2]);
+						if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) return new Response(JSON.stringify({ error: '端口无效' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						const 结果 = await TCP连接延迟(主机, 端口, Number(url.searchParams.get('timeout') || '3000'));
+						return new Response(JSON.stringify({ target: 目标, ...结果 }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
