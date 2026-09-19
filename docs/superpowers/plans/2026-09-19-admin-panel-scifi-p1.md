@@ -256,6 +256,8 @@ import { 管理面板HTML } from './admin/ui/index.js';
 
 - [ ] **Step 8: 等价性验证（关键）**
 
+> 注意：这里比对的是**渲染出的 HTML**，不是打包产物字节。esbuild 会为每个模块插入路径注释（原来只有 `// src/admin/ui.js`，拆分后会有 7 条），因此 `_worker.js` 的字节**一定会变**，这是预期的；模块拆分的正确性由"渲染结果逐字节一致"来保证，产物在 Step 9 重新生成。
+
 Run:
 ```bash
 node --import ./scripts/register-test-loader.mjs -e "
@@ -266,16 +268,16 @@ import('./src/admin/ui/index.js').then(m=>{
 ```
 Expected: `✅ 渲染结果逐字节一致`（`cmp` 无输出）。
 
-- [ ] **Step 9: 跑面板测试与全量校验**
+- [ ] **Step 9: 重新生成产物并跑全量校验**
 
-Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs && npm run check`
-Expected: 测试通过（原断言不变即通过）；`check` 全绿（模块数由 49 增至 56 左右）。
+Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs && npm run build && npm run check`
+Expected: 测试通过（原断言不变即通过）；build 成功；`check` 全绿（模块数由 49 增至约 56，产物字节因新增模块注释而变大属预期）。
 
 - [ ] **Step 10: 提交**
 
 ```bash
-git add src/admin/ui src/main.js scripts/test-ui.mjs
-git rm --cached src/admin/ui.js 2>/dev/null; git add -A src/admin/ui.js 2>/dev/null
+git add src/admin/ui src/main.js scripts/test-ui.mjs _worker.js
+git rm src/admin/ui.js
 git commit -m "refactor(admin): 面板拆分为 src/admin/ui/ 子模块（等价迁移，渲染逐字节一致）"
 ```
 
