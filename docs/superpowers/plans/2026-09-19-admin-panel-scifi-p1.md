@@ -475,7 +475,7 @@ git commit -m "feat(admin): 落地 A+D 融合视觉（切角 HUD + 深蓝令牌�
 
 ```js
   // 3) 主题/动效切换入口与 Tab 可访问性
-  for (const 标记 of ['id="btn-theme"', 'id="btn-motion"', 'id="cmdk"', 'id="cmd-input"', 'role="tablist"', 'role="tabpanel"', 'aria-selected']) {
+  for (const 标记 of ['id="btn-theme"', 'id="btn-motion"', 'role="tablist"', 'role="tabpanel"', 'aria-selected']) {
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 ```
@@ -583,7 +583,19 @@ git commit -m "feat(admin): 深/浅主题与三档动效切换、弹层焦点管
 **Files:**
 - Modify: `src/admin/ui/index.js`（注入 `#cmdk` 浮层）
 - Modify: `src/admin/ui/client.js`（动作表 + 模糊匹配 + 键盘）
-- Test: `scripts/test-ui.mjs`（断言见 Task 3 Step 1，已含 `#cmdk`/`#cmd-input`）
+- Test: `scripts/test-ui.mjs`
+
+- [ ] **Step 0: 加断言**
+
+```js
+  // 4) 命令面板
+  for (const 标记 of ['id="cmdk"', 'id="cmd-input"', 'id="cmd-list"', 'id="cmd-empty"']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+```
+
+Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs`
+Expected: FAIL（`id="cmdk"`）。
 
 - [ ] **Step 1: `index.js` 注入命令面板浮层**
 
