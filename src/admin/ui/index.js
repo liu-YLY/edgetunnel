@@ -12,21 +12,31 @@ import { 配置Tab } from './tabs/config.js';
 import { 运维Tab } from './tabs/ops.js';
 import { 自检Tab } from './tabs/check.js';
 
-// 面板渲染入口：env（只读 env 展示/出站模式推导）+ config_JSON（生效配置，含掩码凭据）
-function 管理面板HTML(env, config_JSON) {
-  const 出站 = env.PROXYIP ? 'manual(' + (String(env.PROXYIP).includes(',') ? '多候选' : 掩码敏感信息(String(env.PROXYIP))) + ')' : String(env.出站模式 || env.EGRESS_MODE || 'auto');
+// 面板渲染入口：env（只读 env 展示）+ config_JSON（生效配置，含掩码凭据）
+// + 运行态（可选，运行时实际生效值：出站模式/并发拨号数/各开关）。
+// 传运行态是必要的：DEBUG 等开关在代码里按 ['1','true'] 解析、TCP 并发拨号默认值随
+// 运营商变化（中国移动为 1），若只按 env 原始值推导会在面板上显示错误数值。
+function 管理面板HTML(env, config_JSON, 运行态 = null) {
+  const 三态布尔 = (v) => ['1', 'true'].includes(String(v));
+  const 开关 = (v) => (v ? '开启' : '关闭');
+  const 生效 = (键, 兜底) => (运行态 && 运行态[键] != null ? 运行态[键] : 兜底);
+  const 候选列表 = env.PROXYIP ? String(env.PROXYIP).split(/[,，\s]+/).filter(Boolean) : [];
+  const 出站 = 候选列表.length
+    ? 'manual(' + (候选列表.length > 1 ? 候选列表.length + ' 个候选' : 掩码敏感信息(候选列表[0])) + ')'
+    : String(生效('出站模式', String(env.出站模式 || env.EGRESS_MODE || 'auto').toLowerCase()));
   const 摘 = {
     host: config_JSON.HOST || '',
     link: config_JSON.LINK || '',
     subname: config_JSON.优选订阅生成?.SUBNAME || 'edgetunnel',
     token: config_JSON.优选订阅生成?.TOKEN || '',
     出站,
+    // 反代 IP 的实际来源：manual 模式取 env.PROXYIP，其余取 KV 配置中的默认反代。
+    反代: 候选列表.length ? 掩码敏感信息(候选列表[0]) : (config_JSON.反代?.PROXYIP || 'auto'),
     path: config_JSON.完整节点路径 || '/',
     协议类型: config_JSON.协议类型, 传输协议: config_JSON.传输协议, gRPC模式: config_JSON.gRPC模式 || 'gun',
     Fingerprint: config_JSON.Fingerprint || 'chrome', ECH: !!config_JSON.ECH, 启用0RTT: !!config_JSON.启用0RTT,
     TLS分片: config_JSON.TLS分片 || '', ALPN: config_JSON.ALPN || '',
     SS: { 加密方式: config_JSON.SS?.加密方式 || 'aes-128-gcm', TLS: !!config_JSON.SS?.TLS },
-    反代: config_JSON.反代?.PROXYIP || 'auto',
     用量: { ...{ success: false, pages: 0, workers: 0, total: 0, max: 100000 }, ...config_JSON.CF?.Usage },
     TG: config_JSON.TG || { 启用: false, BotToken: null, ChatID: null },
     CF: config_JSON.CF || {},
@@ -38,15 +48,15 @@ function 管理面板HTML(env, config_JSON) {
     ['HOST', env.HOST || '（默认访问域名）'],
     ['UUID', env.UUID || '（自动派生）'],
     ['PROXYIP', env.PROXYIP ? 掩码敏感信息(String(env.PROXYIP)) : '（未配置）'],
-    ['出站模式/EGRESS_MODE', env.出站模式 || env.EGRESS_MODE || 'auto'],
+    ['出站模式（生效）', 出站],
     ['URL', env.URL || 'nginx'],
     ['PATH', env.PATH || '/'],
     ['GO2SOCKS5', env.GO2SOCKS5 || '（未配置）'],
-    ['DEBUG', env.DEBUG ? '开启' : '关闭'],
-    ['BEST_SUB', env.BEST_SUB ? '开启' : '关闭'],
-    ['PRELOAD_RACE_DIAL', env.PRELOAD_RACE_DIAL ? '开启' : '关闭'],
-    ['PROXY_CONCURRENT_DIAL', env.PROXY_CONCURRENT_DIAL || '1'],
-    ['TCP_CONCURRENT_DIAL', env.TCP_CONCURRENT_DIAL || '2'],
+    ['DEBUG（生效）', 开关(生效('调试日志打印', 三态布尔(env.DEBUG)))],
+    ['BEST_SUB（生效）', 开关(生效('BEST_SUB', 三态布尔(env.BEST_SUB)))],
+    ['PRELOAD_RACE_DIAL（生效）', 开关(生效('预加载竞速拨号', 三态布尔(env.PRELOAD_RACE_DIAL)))],
+    ['PROXY_CONCURRENT_DIAL（生效）', 生效('反代并发拨号数', env.PROXY_CONCURRENT_DIAL || '1')],
+    ['TCP_CONCURRENT_DIAL（生效）', 生效('TCP并发拨号数', env.TCP_CONCURRENT_DIAL || '2')],
   ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join('');
   return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark" data-motion="full">

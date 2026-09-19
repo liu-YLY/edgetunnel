@@ -50,6 +50,12 @@ td.mn{width:200px;color:var(--mut)}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
 .badge{font-size:11px;color:var(--fg);background:color-mix(in srgb,var(--acc) 14%,transparent);border:1px solid var(--line);padding:3px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 #chart{position:relative}#chart svg{width:100%;height:auto}
+/* SVG 内的颜色一律走主题变量：硬编码浅色会让浅色主题下的数值不可见 */
+.g-track{stroke:color-mix(in srgb,var(--fg) 20%,transparent)}
+.g-fill{stroke:var(--acc)}
+.g-text{fill:var(--fg);font-size:12px}
+#chart rect{fill:var(--acc)}
+#chart text{fill:var(--mut)}
 #chart-tip{position:absolute;display:none;pointer-events:none;background:color-mix(in srgb,var(--bg1) 92%,transparent);border:1px solid var(--line);padding:6px 10px;font-size:12px;z-index:5;white-space:nowrap}
 .sk{height:10px;margin:8px 0;background:linear-gradient(90deg,color-mix(in srgb,var(--acc) 8%,transparent),color-mix(in srgb,var(--acc) 20%,transparent),color-mix(in srgb,var(--acc) 8%,transparent))}
 .err-inline{font-size:12px;color:var(--err);margin-top:8px}

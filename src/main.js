@@ -76,6 +76,8 @@ async function 处理请求(request, env, ctx, 配置) {
 		const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase(), contentType = (request.headers.get('content-type') || '').toLowerCase();
 		const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池, 官方直连端口, envUUID, BEST_SUB, KV可用, 伪装页URL } = 配置;
 		const 出站配置 = { 模式: 出站模式, 地址池: 官方直连地址池, 端口: 官方直连端口 };
+		// 面板要展示"运行时实际生效值"而非 env 原始值（默认值随运营商/解析规则变化）。
+		const 面板运行态 = () => ({ 出站模式, BEST_SUB, ...配置.运行配置 });
 		const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 		const 访问路径 = url.pathname.slice(1).toLowerCase();
 		const 访问IP = request.headers.get('CF-Connecting-IP') || request.headers.get('True-Client-IP') || request.headers.get('X-Real-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Cluster-Client-IP') || '未知IP';
@@ -339,7 +341,7 @@ async function 处理请求(request, env, ctx, 配置) {
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
-						return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+						return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					} else if (区分大小写访问路径 === 'admin/api/usage-history') {// 用量历史（30 天快照）
 						return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (区分大小写访问路径 === 'admin/api/self-check') {// 出口连通自检
@@ -381,7 +383,7 @@ async function 处理请求(request, env, ctx, 配置) {
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
 					if (env.REMOTE_ADMIN === 'true') return fetch(Pages静态页面 + '/admin' + url.search, { signal:AbortSignal.timeout(8000) });
-                    return new Response(管理面板HTML(env, config_JSON), { headers:{ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Frame-Options':'DENY', 'Referrer-Policy':'no-referrer' } });
+                    return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { headers:{ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Frame-Options':'DENY', 'Referrer-Policy':'no-referrer' } });
 				} else if (访问路径 === 'logout' || uuidRegex.test(访问路径)) {//清除cookie并跳转到登录页面
 					const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
 					响应.headers.set('Set-Cookie', 'auth=; Path=/; Max-Age=0; HttpOnly');

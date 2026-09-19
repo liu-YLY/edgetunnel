@@ -9,9 +9,9 @@ function 概览Tab(摘) {
     <h2>请求用量</h2>
     <div class="hero">
       <div class="gauge"><svg viewBox="0 0 120 120" width="120" height="120">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="#2a3346" stroke-width="12"/>
-        <circle id="ubar-fill" cx="60" cy="60" r="50" fill="none" stroke="#2f81f7" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
-        <text id="utext" x="60" y="66" text-anchor="middle" font-size="12" fill="#e6e8ee"></text>
+        <circle class="g-track" cx="60" cy="60" r="50" fill="none" stroke-width="12"/>
+        <circle id="ubar-fill" class="g-fill" cx="60" cy="60" r="50" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
+        <text id="utext" class="g-text" x="60" y="66" text-anchor="middle"></text>
       </svg></div>
       <div style="flex:1;min-width:240px">
         <div class="kvList">

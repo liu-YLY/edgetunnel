@@ -619,6 +619,12 @@ td.mn{width:200px;color:var(--mut)}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
 .badge{font-size:11px;color:var(--fg);background:color-mix(in srgb,var(--acc) 14%,transparent);border:1px solid var(--line);padding:3px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 #chart{position:relative}#chart svg{width:100%;height:auto}
+/* SVG 内的颜色一律走主题变量：硬编码浅色会让浅色主题下的数值不可见 */
+.g-track{stroke:color-mix(in srgb,var(--fg) 20%,transparent)}
+.g-fill{stroke:var(--acc)}
+.g-text{fill:var(--fg);font-size:12px}
+#chart rect{fill:var(--acc)}
+#chart text{fill:var(--mut)}
 #chart-tip{position:absolute;display:none;pointer-events:none;background:color-mix(in srgb,var(--bg1) 92%,transparent);border:1px solid var(--line);padding:6px 10px;font-size:12px;z-index:5;white-space:nowrap}
 .sk{height:10px;margin:8px 0;background:linear-gradient(90deg,color-mix(in srgb,var(--acc) 8%,transparent),color-mix(in srgb,var(--acc) 20%,transparent),color-mix(in srgb,var(--acc) 8%,transparent))}
 .err-inline{font-size:12px;color:var(--err);margin-top:8px}
@@ -1053,8 +1059,8 @@ var 客户端脚本 = `
       rows.forEach(function (r, i) {
         var h = Math.max(2, ((r.total || 0) / maxV) * (H - pad * 2));
         var x = pad + i * bw, y = H - pad - h;
-        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" fill="#6e8bff" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
-        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" fill="#8b93a7" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
+        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
+        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
       bindBarTips(box.querySelector('svg'));
@@ -1193,8 +1199,21 @@ var 客户端脚本 = `
       总行++;
       var body = line.split('#')[0].trim();
       if (!body) { 跳过++; return; }
-      var c = body.split(':');
-      var host = c[0].trim(), port = c.length >= 2 ? c.slice(1).join(':').trim() : '443';
+      var host = '', port = '443';
+      if (body.charAt(0) === '[') {                    // [IPv6]:port
+        var 闭 = body.indexOf(']');
+        if (闭 < 0) { 跳过++; return; }
+        host = body.slice(1, 闭);
+        var 尾 = body.slice(闭 + 1);
+        if (尾.indexOf(':') === 0 && 尾.length > 1) port = 尾.slice(1);
+      } else if (body.split(':').length > 2) {
+        host = body;                                   // 裸 IPv6（无端口）
+      } else {
+        var 冒号 = body.indexOf(':');
+        host = 冒号 === -1 ? body : body.slice(0, 冒号);
+        if (冒号 !== -1) port = body.slice(冒号 + 1);
+      }
+      host = host.trim(); port = port.trim();
       if (!host || !/^\\d+$/.test(port)) { 跳过++; return; }
       var key = host + ':' + port;
       if (seen[key]) return;
@@ -1445,12 +1464,27 @@ var 客户端脚本 = `
   $('#btn-copy-check').addEventListener('click', 复制自检);
   // 首屏若停留在自检 Tab，自动跑一次快捷自检（深度诊断需手动触发）。
   try { if (localStorage.getItem('et_admin_tab') === 'check') loadCheck(false); } catch (e) {}
+  // 从节点链接提取凭据：ss 链接是 ss://base64(加密方式:凭据)@host…，
+  // 直接按 '@' 切分会得到 base64 串，诊断 JSON 里的 uuid 就是错的。
+  function 从链接取凭据(link) {
+    if (!link) return '';
+    var 主体 = String(link).split('://')[1] || '';
+    var at = 主体.indexOf('@');
+    if (at < 0) return '';
+    var 前段 = 主体.slice(0, at);
+    if (String(link).indexOf('ss://') === 0) {
+      try { var 解 = atob(前段), i = 解.indexOf(':'); return i >= 0 ? 解.slice(i + 1) : 解; }
+      catch (e) { return 前段; }
+    }
+    return 前段;
+  }
+
   // 诊断信息
   function loadDiag() {
     取('/admin/config.json').then(function (cfg) {
       骨架完毕('#diag');
       var d = {
-        host: S.host, uuid: S.link ? (S.link.split('://')[1] || '').split('@')[0] : '',
+        host: S.host, uuid: 从链接取凭据(S.link),
         协议: (S.协议类型 || '') + '/' + (S.传输协议 || ''), 出站: S.出站 || '', path: S.path || '',
         Version: cfg.Version || '', UA: navigator.userAgent, generatedAt: new Date().toISOString()
       };
@@ -1517,9 +1551,9 @@ function 概览Tab(摘) {
     <h2>请求用量</h2>
     <div class="hero">
       <div class="gauge"><svg viewBox="0 0 120 120" width="120" height="120">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="#2a3346" stroke-width="12"/>
-        <circle id="ubar-fill" cx="60" cy="60" r="50" fill="none" stroke="#2f81f7" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
-        <text id="utext" x="60" y="66" text-anchor="middle" font-size="12" fill="#e6e8ee"></text>
+        <circle class="g-track" cx="60" cy="60" r="50" fill="none" stroke-width="12"/>
+        <circle id="ubar-fill" class="g-fill" cx="60" cy="60" r="50" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
+        <text id="utext" class="g-text" x="60" y="66" text-anchor="middle"></text>
       </svg></div>
       <div style="flex:1;min-width:240px">
         <div class="kvList">
@@ -1732,14 +1766,20 @@ function 自检Tab() {
 }
 
 // src/admin/ui/index.js
-function 管理面板HTML(env, config_JSON) {
-  const 出站 = env.PROXYIP ? "manual(" + (String(env.PROXYIP).includes(",") ? "多候选" : 掩码敏感信息(String(env.PROXYIP))) + ")" : String(env.出站模式 || env.EGRESS_MODE || "auto");
+function 管理面板HTML(env, config_JSON, 运行态 = null) {
+  const 三态布尔 = (v) => ["1", "true"].includes(String(v));
+  const 开关 = (v) => v ? "开启" : "关闭";
+  const 生效 = (键, 兜底) => 运行态 && 运行态[键] != null ? 运行态[键] : 兜底;
+  const 候选列表 = env.PROXYIP ? String(env.PROXYIP).split(/[,，\s]+/).filter(Boolean) : [];
+  const 出站 = 候选列表.length ? "manual(" + (候选列表.length > 1 ? 候选列表.length + " 个候选" : 掩码敏感信息(候选列表[0])) + ")" : String(生效("出站模式", String(env.出站模式 || env.EGRESS_MODE || "auto").toLowerCase()));
   const 摘 = {
     host: config_JSON.HOST || "",
     link: config_JSON.LINK || "",
     subname: config_JSON.优选订阅生成?.SUBNAME || "edgetunnel",
     token: config_JSON.优选订阅生成?.TOKEN || "",
     出站,
+    // 反代 IP 的实际来源：manual 模式取 env.PROXYIP，其余取 KV 配置中的默认反代。
+    反代: 候选列表.length ? 掩码敏感信息(候选列表[0]) : config_JSON.反代?.PROXYIP || "auto",
     path: config_JSON.完整节点路径 || "/",
     协议类型: config_JSON.协议类型,
     传输协议: config_JSON.传输协议,
@@ -1750,7 +1790,6 @@ function 管理面板HTML(env, config_JSON) {
     TLS分片: config_JSON.TLS分片 || "",
     ALPN: config_JSON.ALPN || "",
     SS: { 加密方式: config_JSON.SS?.加密方式 || "aes-128-gcm", TLS: !!config_JSON.SS?.TLS },
-    反代: config_JSON.反代?.PROXYIP || "auto",
     用量: { ...{ success: false, pages: 0, workers: 0, total: 0, max: 1e5 }, ...config_JSON.CF?.Usage },
     TG: config_JSON.TG || { 启用: false, BotToken: null, ChatID: null },
     CF: config_JSON.CF || {}
@@ -1762,15 +1801,15 @@ function 管理面板HTML(env, config_JSON) {
     ["HOST", env.HOST || "（默认访问域名）"],
     ["UUID", env.UUID || "（自动派生）"],
     ["PROXYIP", env.PROXYIP ? 掩码敏感信息(String(env.PROXYIP)) : "（未配置）"],
-    ["出站模式/EGRESS_MODE", env.出站模式 || env.EGRESS_MODE || "auto"],
+    ["出站模式（生效）", 出站],
     ["URL", env.URL || "nginx"],
     ["PATH", env.PATH || "/"],
     ["GO2SOCKS5", env.GO2SOCKS5 || "（未配置）"],
-    ["DEBUG", env.DEBUG ? "开启" : "关闭"],
-    ["BEST_SUB", env.BEST_SUB ? "开启" : "关闭"],
-    ["PRELOAD_RACE_DIAL", env.PRELOAD_RACE_DIAL ? "开启" : "关闭"],
-    ["PROXY_CONCURRENT_DIAL", env.PROXY_CONCURRENT_DIAL || "1"],
-    ["TCP_CONCURRENT_DIAL", env.TCP_CONCURRENT_DIAL || "2"]
+    ["DEBUG（生效）", 开关(生效("调试日志打印", 三态布尔(env.DEBUG)))],
+    ["BEST_SUB（生效）", 开关(生效("BEST_SUB", 三态布尔(env.BEST_SUB)))],
+    ["PRELOAD_RACE_DIAL（生效）", 开关(生效("预加载竞速拨号", 三态布尔(env.PRELOAD_RACE_DIAL)))],
+    ["PROXY_CONCURRENT_DIAL（生效）", 生效("反代并发拨号数", env.PROXY_CONCURRENT_DIAL || "1")],
+    ["TCP_CONCURRENT_DIAL（生效）", 生效("TCP并发拨号数", env.TCP_CONCURRENT_DIAL || "2")]
   ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join("");
   return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark" data-motion="full">
@@ -7866,6 +7905,7 @@ async function 处理请求(request, env, ctx, 配置) {
   const upgradeHeader = (request.headers.get("Upgrade") || "").toLowerCase(), contentType = (request.headers.get("content-type") || "").toLowerCase();
   const { 管理员密码, 加密秘钥, userID, host, hosts, 默认反代IP, 默认反代兜底, 出站模式, 官方直连地址池: 官方直连地址池2, 官方直连端口: 官方直连端口2, envUUID, BEST_SUB, KV可用, 伪装页URL } = 配置;
   const 出站配置 = { 模式: 出站模式, 地址池: 官方直连地址池2, 端口: 官方直连端口2 };
+  const 面板运行态 = () => ({ 出站模式, BEST_SUB, ...配置.运行配置 });
   const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
   const 访问路径 = url.pathname.slice(1).toLowerCase();
   const 访问IP = request.headers.get("CF-Connecting-IP") || request.headers.get("True-Client-IP") || request.headers.get("X-Real-IP") || request.headers.get("X-Forwarded-For") || request.headers.get("Fly-Client-IP") || request.headers.get("X-Appengine-Remote-Addr") || request.headers.get("X-Cluster-Client-IP") || "未知IP";
@@ -8115,7 +8155,7 @@ async function 处理请求(request, env, ctx, 配置) {
         } else if (访问路径 === "admin/cf.json") {
           return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/config") {
-          return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
+          return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
         } else if (区分大小写访问路径 === "admin/api/usage-history") {
           return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/api/self-check") {
@@ -8157,7 +8197,7 @@ async function 处理请求(request, env, ctx, 配置) {
         }
         ctx.waitUntil(请求日志记录(env, request, 访问IP, "Admin_Login", config_JSON));
         if (env.REMOTE_ADMIN === "true") return fetch(Pages静态页面 + "/admin" + url.search, { signal: AbortSignal.timeout(8e3) });
-        return new Response(管理面板HTML(env, config_JSON), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
+        return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
       } else if (访问路径 === "logout" || uuidRegex.test(访问路径)) {
         const 响应 = new Response("重定向中...", { status: 302, headers: { "Location": "/login" } });
         响应.headers.set("Set-Cookie", "auth=; Path=/; Max-Age=0; HttpOnly");

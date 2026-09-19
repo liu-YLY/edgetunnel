@@ -376,8 +376,8 @@ const 客户端脚本 = `
       rows.forEach(function (r, i) {
         var h = Math.max(2, ((r.total || 0) / maxV) * (H - pad * 2));
         var x = pad + i * bw, y = H - pad - h;
-        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" fill="#6e8bff" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
-        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" fill="#8b93a7" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
+        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
+        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
       bindBarTips(box.querySelector('svg'));
@@ -516,8 +516,21 @@ const 客户端脚本 = `
       总行++;
       var body = line.split('#')[0].trim();
       if (!body) { 跳过++; return; }
-      var c = body.split(':');
-      var host = c[0].trim(), port = c.length >= 2 ? c.slice(1).join(':').trim() : '443';
+      var host = '', port = '443';
+      if (body.charAt(0) === '[') {                    // [IPv6]:port
+        var 闭 = body.indexOf(']');
+        if (闭 < 0) { 跳过++; return; }
+        host = body.slice(1, 闭);
+        var 尾 = body.slice(闭 + 1);
+        if (尾.indexOf(':') === 0 && 尾.length > 1) port = 尾.slice(1);
+      } else if (body.split(':').length > 2) {
+        host = body;                                   // 裸 IPv6（无端口）
+      } else {
+        var 冒号 = body.indexOf(':');
+        host = 冒号 === -1 ? body : body.slice(0, 冒号);
+        if (冒号 !== -1) port = body.slice(冒号 + 1);
+      }
+      host = host.trim(); port = port.trim();
       if (!host || !/^\\d+$/.test(port)) { 跳过++; return; }
       var key = host + ':' + port;
       if (seen[key]) return;
@@ -768,12 +781,27 @@ const 客户端脚本 = `
   $('#btn-copy-check').addEventListener('click', 复制自检);
   // 首屏若停留在自检 Tab，自动跑一次快捷自检（深度诊断需手动触发）。
   try { if (localStorage.getItem('et_admin_tab') === 'check') loadCheck(false); } catch (e) {}
+  // 从节点链接提取凭据：ss 链接是 ss://base64(加密方式:凭据)@host…，
+  // 直接按 '@' 切分会得到 base64 串，诊断 JSON 里的 uuid 就是错的。
+  function 从链接取凭据(link) {
+    if (!link) return '';
+    var 主体 = String(link).split('://')[1] || '';
+    var at = 主体.indexOf('@');
+    if (at < 0) return '';
+    var 前段 = 主体.slice(0, at);
+    if (String(link).indexOf('ss://') === 0) {
+      try { var 解 = atob(前段), i = 解.indexOf(':'); return i >= 0 ? 解.slice(i + 1) : 解; }
+      catch (e) { return 前段; }
+    }
+    return 前段;
+  }
+
   // 诊断信息
   function loadDiag() {
     取('/admin/config.json').then(function (cfg) {
       骨架完毕('#diag');
       var d = {
-        host: S.host, uuid: S.link ? (S.link.split('://')[1] || '').split('@')[0] : '',
+        host: S.host, uuid: 从链接取凭据(S.link),
         协议: (S.协议类型 || '') + '/' + (S.传输协议 || ''), 出站: S.出站 || '', path: S.path || '',
         Version: cfg.Version || '', UA: navigator.userAgent, generatedAt: new Date().toISOString()
       };

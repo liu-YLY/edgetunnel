@@ -51,6 +51,22 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(类名), `样式应包含 ${类名}`);
   }
 
+  // 1.6) 用量卡说明 + SVG 走主题变量（硬编码浅色会让浅色主题下的数值不可见）
+  for (const 标记 of ['id="usage-note"', '.g-text', '.g-fill', '.g-track', '#chart rect{fill:var(--acc)}']) {
+    assert.ok(html.includes(标记), `HTML/样式应包含 ${标记}`);
+  }
+  assert.ok(!html.includes('#e6e8ee'), 'SVG 不应再硬编码浅色文字（浅色主题下不可见）');
+
+  // 1.7) 生效值展示：运行时值必须覆盖 env 原始值推导。
+  // 背景：DEBUG 等开关实际按 ['1','true'] 解析（env='false' 曾显示成"开启"）；
+  // TCP 并发拨号默认值随运营商变化（中国移动为 1），不能硬编码 2。
+  const 生效HTML = 管理面板HTML({ DEBUG: 'false', TCP_CONCURRENT_DIAL: '' }, 正常配置, { 出站模式: 'region', BEST_SUB: true, 调试日志打印: false, 预加载竞速拨号: true, 反代并发拨号数: 1, TCP并发拨号数: 1 });
+  assert.ok(生效HTML.includes('出站模式（生效）') && 生效HTML.includes('region'), '应显示生效出站模式 region');
+  assert.ok(生效HTML.includes('DEBUG（生效）</td><td>关闭'), 'DEBUG=false 必须显示关闭，而不是按真值判断的开启');
+  assert.ok(生效HTML.includes('TCP_CONCURRENT_DIAL（生效）</td><td>1'), 'TCP 并发拨号应显示生效值 1（非硬编码 2）');
+  assert.ok(生效HTML.includes('PRELOAD_RACE_DIAL（生效）</td><td>开启'), '预加载竞速拨号应显示生效值');
+  assert.ok(生效HTML.includes('PROXY_CONCURRENT_DIAL（生效）</td><td>1'), '反代并发拨号应显示生效值');
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,
