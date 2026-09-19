@@ -6,7 +6,7 @@ function 运维Tab(摘) {
 <section class="page" id="page-ops" role="tabpanel" data-page="ops">
   <div class="card">
     <h2>诊断信息</h2>
-    <div class="mono" id="diag"></div>
+    <div class="mono" id="diag" data-skeleton><div class="sk"></div><div class="sk"></div></div>
     <div class="row"><button type="button" class="btn ghost" id="btn-diag-copy">复制诊断 JSON</button><span class="dim" id="diag-note"></span></div>
     <p class="dim" style="margin-top:10px">登录/写接口受 IP 限流（60 秒）与同源校验保护；会话绑定 UA 与 host，24 小时过期。</p>
   </div>
@@ -28,7 +28,8 @@ function 运维Tab(摘) {
   </div>
   <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>
-    <textarea id="o-add" rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
+    <div id="o-add-sk" data-skeleton><div class="sk"></div><div class="sk"></div></div>
+    <textarea id="o-add" data-skeleton rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
     <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
   </div>
   <div class="card">

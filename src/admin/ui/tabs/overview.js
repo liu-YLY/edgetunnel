@@ -30,7 +30,7 @@ function 概览Tab(摘) {
   <div class="badges" id="badges"></div>
   <div class="card">
     <h2>近 30 天用量趋势</h2>
-    <div id="chart"><p class="dim">加载中…</p></div>
+    <div id="chart" data-skeleton><div class="sk" style="width:92%"></div><div class="sk" style="width:74%"></div></div>
     <div id="chart-tip" role="tooltip"></div>
   </div>
   <div class="card">

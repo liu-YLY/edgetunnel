@@ -7,9 +7,46 @@ const 客户端脚本 = `
 (function () {
   var S = window.__ET__;
   function $(s) { return document.querySelector(s); }
-  function toast(msg, ok) {
-    var t = $('#toast'); t.textContent = msg; t.className = 'show ' + (ok ? 'ok' : 'err');
-    clearTimeout(t._h); t._h = setTimeout(function () { t.className = ''; }, 3200);
+
+  // —— Toast 队列：同时只显示一条，其余排队 ——
+  var 提示队列 = [], 提示忙 = false;
+  function toast(msg, ok) { 提示队列.push({ msg: msg, ok: ok !== false }); 出队提示(); }
+  function 出队提示() {
+    if (提示忙 || !提示队列.length) return;
+    var it = 提示队列.shift(), t = $('#toast');
+    提示忙 = true;
+    t.textContent = it.msg; t.className = 'show ' + (it.ok ? 'ok' : 'err');
+    setTimeout(function () { t.className = ''; 提示忙 = false; 出队提示(); }, 3200);
+  }
+
+  // —— 幂等 GET 的失败重试（对 POST 不自动重试，避免重复写入） ——
+  function 取(path, 重试次数) {
+    var 次数 = 重试次数 === undefined ? 2 : 重试次数;
+    return fetch(path).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).catch(function (e) {
+      if (次数 <= 0) throw e;
+      return new Promise(function (res) { setTimeout(res, 次数 === 2 ? 500 : 1500); }).then(function () { return 取(path, 次数 - 1); });
+    });
+  }
+  function 取文本(path, 重试次数) {
+    var 次数 = 重试次数 === undefined ? 2 : 重试次数;
+    return fetch(path).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).catch(function (e) {
+      if (次数 <= 0) throw e;
+      return new Promise(function (res) { setTimeout(res, 次数 === 2 ? 500 : 1500); }).then(function () { return 取文本(path, 次数 - 1); });
+    });
+  }
+  function 骨架完毕(sel) { var el = $(sel); if (el) el.removeAttribute('data-skeleton'); }
+  function 内联错误(sel, msg, 重试函数) {
+    var el = $(sel); if (!el) return;
+    el.innerHTML = '<p class="err-inline">' + 转义文本(msg) + '</p>';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'iconbtn'; b.textContent = '重试';
+    b.addEventListener('click', 重试函数);
+    el.appendChild(b);
   }
   function copy(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, function () { toast('复制失败'); }); }
@@ -300,7 +337,8 @@ const 客户端脚本 = `
     var use = S.用量 || {}, max = use.max || 1, total = use.total || 0;
     var c = $('#ubar-fill'); if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, total / max)));
     var t = $('#utext'); if (t) t.textContent = fmt(total) + ' / ' + fmt(max) + ' ' + ((total / max) * 100).toFixed(1) + '%';
-    api('/admin/api/usage-history').then(function (rows) {
+    取('/admin/api/usage-history').then(function (rows) {
+      骨架完毕('#chart');
       var box = $('#chart'); if (!box) return;
       if (!rows || !rows.length) { box.innerHTML = '<p class="dim">暂无历史数据（下次用量刷新后写入）</p>'; return; }
       var W = 640, H = 180, pad = 24;
@@ -314,7 +352,7 @@ const 客户端脚本 = `
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
       bindBarTips(box.querySelector('svg'));
-    }).catch(function (e) { var box = $('#chart'); if (box) box.innerHTML = '<p class="dim">用量历史不可用：' + e.message + '</p>'; });
+    }).catch(function (e) { 内联错误('#chart', '用量历史不可用：' + e.message, loadOverview); });
   }
 
   // 概览增强：趋势图 hover tooltip（Task2）
@@ -422,8 +460,11 @@ const 客户端脚本 = `
 
   // 运维
   function loadOps() {
-    api('/admin/ADD.txt').then(function (t) { if (typeof t === 'string') $('#o-add').value = t; })
-      .catch(function () { $('#o-add').placeholder = '加载失败'; });
+    取文本('/admin/ADD.txt').then(function (t) {
+      骨架完毕('#o-add');
+      var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
+      if (typeof t === 'string') $('#o-add').value = t;
+    }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
   }
   $('#btn-save-tg').addEventListener('click', function () {
     var body = { BotToken: $('#o-tg-bot').value.trim(), ChatID: $('#o-tg-chat').value.trim() };
@@ -453,7 +494,8 @@ const 客户端脚本 = `
 
   // 诊断信息
   function loadDiag() {
-    api('/admin/config.json').then(function (cfg) {
+    取('/admin/config.json').then(function (cfg) {
+      骨架完毕('#diag');
       var d = {
         host: S.host, uuid: S.link ? (S.link.split('://')[1] || '').split('@')[0] : '',
         协议: (S.协议类型 || '') + '/' + (S.传输协议 || ''), 出站: S.出站 || '', path: S.path || '',
@@ -461,7 +503,7 @@ const 客户端脚本 = `
       };
       $('#diag').textContent = JSON.stringify(d, null, 2);
       var note = $('#diag-note'); if (note) note.textContent = '版本 ' + (cfg.Version || '未知');
-    }).catch(function (e) { $('#diag').textContent = '诊断数据加载失败：' + e.message; });
+    }).catch(function (e) { 内联错误('#diag', '诊断数据加载失败：' + e.message, loadDiag); });
   }
   $('#btn-diag-copy').addEventListener('click', function () { copy($('#diag').textContent || ''); });
 
