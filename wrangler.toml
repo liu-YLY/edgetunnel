@@ -1,4 +1,5 @@
 name = "v20251104"
+account_id = "e21102aa498eb61e5e92bf73735f0cd4"
 main = "_worker.js"
 compatibility_date = "2025-11-04"
 keep_vars = true
