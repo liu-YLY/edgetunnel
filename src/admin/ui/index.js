@@ -65,6 +65,7 @@ d.setAttribute('data-motion',m);
 <body>
 <div id="toast" role="status" aria-live="polite"></div>
 ${快捷键帮助浮层()}
+${命令面板()}
 <div class="wrap" id="top">
 ${页头(sse)}
 ${主导航()}
@@ -90,9 +91,20 @@ function 快捷键帮助浮层() {
         <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
         <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
         <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
+        <tr><td><kbd>⌘K</kbd></td><td>打开命令面板</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
       </tbody>
     </table>
+  </div>
+</div>`;
+}
+
+function 命令面板() {
+  return `<div id="cmdk" role="dialog" aria-modal="true" aria-label="命令面板">
+  <div class="box">
+    <input id="cmd-input" type="text" placeholder="输入动作名称…（↑↓ 选择，Enter 执行，Esc 关闭）" autocomplete="off" spellcheck="false" />
+    <div class="list" id="cmd-list" role="listbox"></div>
+    <div class="empty" id="cmd-empty" style="display:none">无匹配动作</div>
   </div>
 </div>`;
 }

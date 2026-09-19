@@ -725,6 +725,96 @@ var 客户端脚本 = `
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
+  // —— 命令面板 ——
+  var 动作表 = [
+    { 名: '概览', 组: '切换', 跑: function () { 点('[data-tab="overview"]'); } },
+    { 名: '节点与订阅', 组: '切换', 跑: function () { 点('[data-tab="nodes"]'); } },
+    { 名: '配置', 组: '切换', 跑: function () { 点('[data-tab="config"]'); } },
+    { 名: '运维', 组: '切换', 跑: function () { 点('[data-tab="ops"]'); } },
+    { 名: '复制主节点链接', 组: '节点', 跑: function () { 点('#btn-copy-link'); } },
+    { 名: '复制通用订阅', 组: '节点', 跑: function () { 点('#btn-copy-sub'); } },
+    { 名: '复制 Clash 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-clash'); } },
+    { 名: '复制 sing-box 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-singbox'); } },
+    { 名: '打开二维码', 组: '节点', 跑: function () { 点('#btn-open-qr'); } },
+    { 名: '下载二维码 PNG', 组: '节点', 跑: function () { 点('#btn-open-qr'); setTimeout(function () { 点('#btn-qr-download'); }, 120); } },
+    { 名: '刷新用量', 组: '概览', 跑: function () { 点('#btn-refresh-usage'); } },
+    { 名: '刷新全部', 组: '概览', 跑: function () { 点('#btn-refresh-top'); } },
+    { 名: '配置：重新加载', 组: '配置', 跑: function () { 点('#btn-load-json'); } },
+    { 名: '配置：保存到 KV', 组: '配置', 跑: function () { 点('[data-tab="config"]'); setTimeout(function () { 点('#btn-save-json'); }, 120); } },
+    { 名: '配置：导出到剪贴板', 组: '配置', 跑: function () { 点('#btn-cfg-export'); } },
+    { 名: '配置：从剪贴板导入', 组: '配置', 跑: function () { 点('#btn-cfg-import'); } },
+    { 名: '配置：恢复上一版本', 组: '配置', 跑: function () { 点('#btn-restore'); } },
+    { 名: '运维：保存 TG', 组: '运维', 跑: function () { 点('#btn-save-tg'); } },
+    { 名: '运维：保存 CF 凭据', 组: '运维', 跑: function () { 点('#btn-save-cf'); } },
+    { 名: '运维：保存优选 IP', 组: '运维', 跑: function () { 点('#btn-save-add'); } },
+    { 名: '运维：复制诊断 JSON', 组: '运维', 跑: function () { 点('#btn-diag-copy'); } },
+    { 名: '运维：重置配置为默认值', 组: '运维', 跑: function () { 点('#btn-init'); } },
+    { 名: '切换主题', 组: '外观', 跑: function () { 设置主题(); } },
+    { 名: '切换动效档位', 组: '外观', 跑: function () { 设置动效(); } },
+    { 名: '打开快捷键帮助', 组: '外观', 跑: function () { 打开弹层($('#kbd-help')); } },
+    { 名: '打开 Workers 日志控制台', 组: '外观', 跑: function () { window.open('https://dash.cloudflare.com/?to=/:account/workers/services/edit/edgetunnel/production/logs', '_blank', 'noopener'); } },
+  ];
+  function 点(sel) { var el = document.querySelector(sel); if (el) el.click(); return !!el; }
+
+  // 子序列模糊匹配：按字符顺序命中即算匹配，返回命中位置用于高亮
+  function 模糊(文本, 输入) {
+    var t = 文本.toLowerCase(), q = 输入.toLowerCase(), pos = [], i = 0;
+    for (var j = 0; j < q.length; j++) {
+      var k = t.indexOf(q[j], i);
+      if (k < 0) return null;
+      pos.push(k); i = k + 1;
+    }
+    return pos;
+  }
+  function 高亮(文本, pos) {
+    if (!pos || !pos.length) return 转义文本(文本);
+    var out = '', set = {}, i;
+    for (i = 0; i < pos.length; i++) set[pos[i]] = 1;
+    for (i = 0; i < 文本.length; i++) out += set[i] ? '<b>' + 转义文本(文本[i]) + '</b>' : 转义文本(文本[i]);
+    return out;
+  }
+  function 转义文本(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+  var 命令结果 = [], 命令选中 = 0;
+  function 渲染命令(输入) {
+    var hits = [];
+    动作表.forEach(function (a) {
+      if (!输入) { hits.push({ a: a, pos: null }); return; }
+      var pos = 模糊(a.名, 输入);
+      if (pos) hits.push({ a: a, pos: pos });
+    });
+    命令结果 = hits; 命令选中 = 0;
+    var list = $('#cmd-list');
+    list.innerHTML = hits.map(function (h, i) {
+      return '<div class="item' + (i === 0 ? ' sel' : '') + '" data-i="' + i + '" role="option">' + 高亮(h.a.名, h.pos) + ' <span class="dim">· ' + 转义文本(h.a.组) + '</span></div>';
+    }).join('');
+    $('#cmd-empty').style.display = hits.length ? 'none' : '';
+    Array.prototype.slice.call(list.querySelectorAll('.item')).forEach(function (el) {
+      el.addEventListener('click', function () { 执行命令(Number(el.dataset.i)); });
+    });
+  }
+  function 移动命令(步) {
+    if (!命令结果.length) return;
+    var list = $('#cmd-list'), els = list.querySelectorAll('.item');
+    命令选中 = (命令选中 + 步 + 命令结果.length) % 命令结果.length;
+    for (var i = 0; i < els.length; i++) els[i].classList.toggle('sel', i === 命令选中);
+    if (els[命令选中]) els[命令选中].scrollIntoView({ block: 'nearest' });
+  }
+  function 执行命令(i) {
+    var hit = 命令结果[i];
+    if (!hit) return;
+    关闭弹层($('#cmdk'));
+    hit.a.跑();
+  }
+  function 打开命令面板() { 渲染命令(''); $('#cmd-input').value = ''; 打开弹层($('#cmdk'), $('#cmd-input')); }
+  $('#cmd-input').addEventListener('input', function () { 渲染命令(this.value.trim()); });
+  $('#cmd-input').addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); 移动命令(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); 移动命令(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); 执行命令(命令选中); }
+  });
+  $('#cmdk').addEventListener('click', function (e) { if (e.target === this) 关闭弹层($('#cmdk')); });
+
   // 概览增强：实时时钟（Task2）
   function tickClock() {
     var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
@@ -823,13 +913,12 @@ var 客户端脚本 = `
       b.addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=' + b.dataset.fmt); });
     });
   }
-  function openQR() { var m = $('#qr-modal'); if (m) m.classList.add('open'); }
-  function closeQR() { var m = $('#qr-modal'); if (m) m.classList.remove('open'); }
+  function openQR() { 打开弹层($('#qr-modal')); }
+  function closeQR() { 关闭弹层($('#qr-modal')); }
   var _qrClose = document.getElementById('btn-qr-close');
   if (_qrClose) _qrClose.addEventListener('click', closeQR);
   var _qrModal = document.getElementById('qr-modal');
-  if (_qrModal) _qrModal.addEventListener('click', function (e) { if (e.target === this) closeQR(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQR(); });
+  if (_qrModal) _qrModal.addEventListener('click', function (e) { if (e.target === this) 关闭弹层($('#qr-modal')); });
   var _btnDl = document.getElementById('btn-qr-download');
   if (_btnDl) _btnDl.addEventListener('click', function () {
     var svg = document.querySelector('#qr-big svg');
@@ -848,7 +937,7 @@ var 客户端脚本 = `
     img.onerror = function () { toast('二维码渲染失败', false); };
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
   });
-  $('#btn-open-qr').addEventListener('click', openQR);
+  $('#btn-open-qr').addEventListener('click', function () { 打开弹层($('#qr-modal')); });
   $('#btn-copy-link').addEventListener('click', function () { copy(S.link || ''); });
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
@@ -954,20 +1043,25 @@ var 客户端脚本 = `
 
   // 快捷键
   document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); $('#cmdk').classList.contains('open') ? 关闭弹层($('#cmdk')) : 打开命令面板(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if ($('#cmdk').classList.contains('open')) return;
     var tag = (document.activeElement || {}).tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    if (e.key === 'Escape') { closeQR(); var h = $('#kbd-help'); if (h) h.classList.remove('open'); return; }
+    if (e.key === 'Escape') { 关所有弹层(); return; }
     var map = { '1': 'overview', '2': 'nodes', '3': 'config', '4': 'ops' };
-    if (map[e.key]) { var b = document.querySelector('[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
-    else if (e.key === 'c' || e.key === 'C') { var l = $('#btn-copy-link'); if (l) l.click(); }
-    else if (e.key === 'r' || e.key === 'R') { var u = $('#btn-refresh-usage'); if (u) u.click(); }
-    else if (e.key === '?') { var h2 = $('#kbd-help'); if (h2) h2.classList.toggle('open'); }
+    if (map[e.key]) { 点('[data-tab="' + map[e.key] + '"]'); }
+    else if (e.key === 'c' || e.key === 'C') { 点('#btn-copy-link'); }
+    else if (e.key === 'r' || e.key === 'R') { 点('#btn-refresh-usage'); }
+    else if (e.key === '?') { var h = $('#kbd-help'); h.classList.contains('open') ? 关闭弹层(h) : 打开弹层(h); }
   });
+  function 关所有弹层() {
+    ['#kbd-help', '#qr-modal', '#cmdk', '#diff-modal'].forEach(function (s) { var el = $(s); if (el && el.classList.contains('open')) 关闭弹层(el); });
+  }
   var _kbdClose = document.getElementById('btn-kbd-close');
-  if (_kbdClose) _kbdClose.addEventListener('click', function () { $('#kbd-help').classList.remove('open'); });
+  if (_kbdClose) _kbdClose.addEventListener('click', function () { 关闭弹层($('#kbd-help')); });
   var _kbd = document.getElementById('kbd-help');
-  if (_kbd) _kbd.addEventListener('click', function (e) { if (e.target === this) this.classList.remove('open'); });
+  if (_kbd) _kbd.addEventListener('click', function (e) { if (e.target === this) 关闭弹层($('#kbd-help')); });
 
   // 回到页面自动刷新用量；header 刷新
   document.addEventListener('visibilitychange', function () {
@@ -1183,6 +1277,7 @@ d.setAttribute('data-motion',m);
 <body>
 <div id="toast" role="status" aria-live="polite"></div>
 ${快捷键帮助浮层()}
+${命令面板()}
 <div class="wrap" id="top">
 ${页头(sse)}
 ${主导航()}
@@ -1207,9 +1302,19 @@ function 快捷键帮助浮层() {
         <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
         <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
         <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
+        <tr><td><kbd>⌘K</kbd></td><td>打开命令面板</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
       </tbody>
     </table>
+  </div>
+</div>`;
+}
+function 命令面板() {
+  return `<div id="cmdk" role="dialog" aria-modal="true" aria-label="命令面板">
+  <div class="box">
+    <input id="cmd-input" type="text" placeholder="输入动作名称…（↑↓ 选择，Enter 执行，Esc 关闭）" autocomplete="off" spellcheck="false" />
+    <div class="list" id="cmd-list" role="listbox"></div>
+    <div class="empty" id="cmd-empty" style="display:none">无匹配动作</div>
   </div>
 </div>`;
 }
