@@ -2,7 +2,12 @@ name: Deploy to Cloudflare Workers
 
 # 推送 main 即构建校验并部署到生产 Worker（服务名 edgetunnel，域名 edt2.liuyong.eu.org）。
 # 凭据与 secrets 存放在 GitHub 仓库 Secrets：CLOUDFLARE_API_TOKEN / ADMIN / KEY / UUID。
-# 每次部署用 wrangler secret put 幂等重写生产 secrets，防止部署清空仪表盘凭据（自愈）。
+#
+# 步骤顺序：先 Deploy，再自愈 secrets。原因（2026-09-19 实测）：
+#   使用 Workers versions 模型时，若"最新版本未部署"，wrangler secret put 会直接报
+#   "the latest version of your Worker isn't currently deployed" 而失败；把它放在
+#   Deploy 之前会导致一次部署中 secrets 步骤失败并连带跳过 Deploy（P1 上线时真实发生）。
+#   自愈是安全兜底，不应阻断代码部署，故放在 Deploy 之后，且失败只告警不失败。
 # OFF_LOG 在 Worker 上是 plain_text 变量（同名不能再建 secret，否则报 10053），
 # 由 wrangler.toml 的 keep_vars = true 保留，不纳入自愈。
 # 未配置 CLOUDFLARE_API_TOKEN 的 fork 自动跳过部署，只跑校验。
@@ -51,18 +56,29 @@ jobs:
       - run: npm run test:runtime
       - run: npm run deploy:check
 
-      - name: Set Workers secrets (self-healing)
-        if: env.CLOUDFLARE_API_TOKEN != ''
-        run: |
-          set -e
-          for s in ADMIN KEY UUID; do
-            v="${!s}"
-            if [ -n "$v" ]; then
-              printf '%s' "$v" | npx wrangler secret put "$s" --env '' >/dev/null
-              echo "secret $s OK"
-            fi
-          done
-
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy --env ''
+
+      # 代码部署完成后再做 secrets 自愈：避免 versions 状态导致 secret put 失败时连带跳过部署。
+      # 只告警、不失败：自愈是兜底，不应阻断发布。
+      - name: Set Workers secrets (self-healing)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          set +e
+          failed=""
+          for s in ADMIN KEY UUID; do
+            v="${!s}"
+            if [ -n "$v" ]; then
+              if printf '%s' "$v" | npx wrangler secret put "$s" --env '' >/dev/null 2>&1; then
+                echo "secret $s OK"
+              else
+                echo "secret $s FAILED"
+                failed="$failed $s"
+              fi
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::warning::secrets 未写入:$failed —— 已跳过，不影响本次代码部署；请确认线上凭据未丢失，必要时手动执行 wrangler secret put"
+          fi
+          exit 0
