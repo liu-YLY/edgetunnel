@@ -1,8 +1,10 @@
 name: Deploy to Cloudflare Workers
 
 # 推送 main 即构建校验并部署到生产 Worker（服务名 edgetunnel，域名 edt2.liuyong.eu.org）。
-# 凭据与 secrets 存放在 GitHub 仓库 Secrets：CLOUDFLARE_API_TOKEN / ADMIN / KEY / UUID / OFF_LOG。
+# 凭据与 secrets 存放在 GitHub 仓库 Secrets：CLOUDFLARE_API_TOKEN / ADMIN / KEY / UUID。
 # 每次部署用 wrangler secret put 幂等重写生产 secrets，防止部署清空仪表盘凭据（自愈）。
+# OFF_LOG 在 Worker 上是 plain_text 变量（同名不能再建 secret，否则报 10053），
+# 由 wrangler.toml 的 keep_vars = true 保留，不纳入自愈。
 # 未配置 CLOUDFLARE_API_TOKEN 的 fork 自动跳过部署，只跑校验。
 on:
   push:
@@ -34,7 +36,6 @@ jobs:
       ADMIN: ${{ secrets.ADMIN }}
       KEY: ${{ secrets.KEY }}
       UUID: ${{ secrets.UUID }}
-      OFF_LOG: ${{ secrets.OFF_LOG }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -51,7 +52,7 @@ jobs:
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: |
           set -e
-          for s in ADMIN KEY UUID OFF_LOG; do
+          for s in ADMIN KEY UUID; do
             v="${!s}"
             if [ -n "$v" ]; then
               printf '%s' "$v" | npx wrangler secret put "$s" --env '' >/dev/null
