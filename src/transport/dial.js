@@ -193,36 +193,41 @@ function 解析反代地址(候选) {
 	return { hostname, port: port || 80 };
 }
 
-// 连接复用命中率：对同一 host:port 连续 connect×N，统计从第2轮起的复用命中。
-// 命中判定：后续轮耗时 < 首轮×0.6；首轮即超时（本地无出口）时命中拿 0/n-1。
+// 建连耗时采样：对同一 host:port 连续 connect×N。
+// 关键：采样期间保持 socket 打开（每轮主动 close 会破坏池化复用，令指标失真），
+// 全部采样结束后统一关闭。命中判定：后续轮耗时 < 首轮×0.6。
 async function 连接复用采样(hostname = 'example.com', port = 443, 次数 = 6) {
-	const times = [];
+	const times = [], 保持 = [];
 	for (let i = 0; i < 次数; i++) {
 		const 起始 = Date.now();
-		let socket;
 		try {
-			socket = cloudflareConnect({ hostname, port }, { secureTransport: 'on', allowHalfOpen: false });
+			const socket = cloudflareConnect({ hostname, port }, { secureTransport: 'on', allowHalfOpen: false });
+			保持.push(socket);
 			await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3000))]);
 		} catch (error) { /* 吞掉建连异常，计入耗时 */ }
 		times.push(Date.now() - 起始);
-		try { socket?.close?.(); } catch (error) { /* 吞掉关闭错误 */ }
 	}
+	for (const s of 保持) { try { s?.close?.(); } catch (error) { /* 吞掉关闭错误 */ } }
 	const 首轮 = times[0];
-	let hits = 0;
-	if (首轮 < 3000) hits = times.slice(1).filter((t) => t < 首轮 * 0.6).length;
-	return { hits: hits + '/' + (次数 - 1), times };
+	const 后续 = times.slice(1);
+	const 命中数 = 首轮 < 3000 ? 后续.filter((t) => t < 首轮 * 0.6).length : 0;
+	const 排序 = [...后续].sort((a, b) => a - b);
+	return { hits: 命中数 + '/' + (次数 - 1), times, 首轮, 后续中位: 排序.length ? 排序[Math.floor(排序.length / 2)] : null };
 }
 
-// 黑洞地址实测握手耗时：验证超时预算是否按预期触发释放。
+// 黑洞超时采样：区分"快速失败"与"静默丢包超时"。
+// 无效目标被快速拒绝（耗时极小）说明预算未被消耗；只有静默丢包才会跑满预算。
 async function 黑洞超时采样(预算ms = 6000) {
 	const 起始 = Date.now();
-	let socket;
+	let socket, 错误 = null;
 	try {
 		socket = cloudflareConnect({ hostname: '192.0.2.1', port: 443 });
 		await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 预算ms))]);
-	} catch (error) { /* 吞掉 */ }
+	} catch (error) { 错误 = String(error?.message || error); }
 	try { socket?.close?.(); } catch (error) { /* 吞掉 */ }
-	return { ms: Date.now() - 起始, 预算: 预算ms };
+	const ms = Date.now() - 起始;
+	const 判定 = 错误 ? '快速失败' : (ms >= 预算ms ? '静默超时' : '已建立');
+	return { ms, 预算: 预算ms, 判定, error: 错误 };
 }
 
 // deep 代理：反代 PROXYIP 建连耗时（未配置返回跳过）。

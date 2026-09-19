@@ -643,10 +643,28 @@ td.mn{width:200px;color:var(--mut)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 #toast.ok{border-color:var(--ok);color:var(--ok)}#toast.ok::before{content:"✓ "}
 #toast.err{border-color:var(--err);color:var(--err)}#toast.err::before{content:"✕ "}
+.chk-panel{margin-bottom:14px}
+.chk-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chk-bar{display:none;height:3px;margin:12px 0 0;background:color-mix(in srgb,var(--acc) 14%,transparent);overflow:hidden}
+.chk-bar.on{display:block}
+.chk-bar i{display:block;height:100%;width:34%;background:linear-gradient(90deg,var(--acc2),var(--acc));animation:chk-slide 1.1s ease-in-out infinite}
+@keyframes chk-slide{0%{margin-left:-34%}100%{margin-left:100%}}
+.chk-sum{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
 .chk{min-height:118px;margin:0}
-.pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;background:var(--surf)}
+.chk-wide{grid-column:1/-1}
+.chk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.chk-name{font-size:12px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
+.chk-val{font:600 20px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin-bottom:8px;overflow-wrap:anywhere}
+.chk-kv{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.chk-row{display:flex;gap:8px;align-items:baseline}
+.chk-row b{flex:0 0 74px;color:var(--mut);font-weight:400}
+.chk-row span{flex:1;overflow-wrap:anywhere}
+.chk-row span.bad{color:var(--err)}
+.chk-row span.warn{color:var(--warn)}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;background:var(--surf);white-space:nowrap}
 .pill.ok{color:var(--ok);border-color:var(--ok)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
 .pill.err{color:var(--err);border-color:var(--err)}
 .pill.run{color:var(--warn);border-color:var(--warn);animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
@@ -984,6 +1002,7 @@ var 客户端脚本 = `
     if (btn.dataset.tab === 'config') loadConfig();
     if (btn.dataset.tab === 'ops') { loadOps(); loadDiag(); }
     if (btn.dataset.tab === 'nodes') loadNodes();
+    if (btn.dataset.tab === 'check' && !自检已跑) loadCheck(false);
   }
   tabs.forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn); }); });
   (function () {
@@ -1212,76 +1231,183 @@ var 客户端脚本 = `
 
   // —— 自检 Tab（GET /admin/api/self-check，?deep=1 含 deep） ——
   var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['ip', 'ip']];
+  var 自检已跑 = false, 自检原始 = null, 自检计时器 = null;
+
+  function 设徽章(sel, 类, 文案) {
+    var el = $(sel); if (!el) return;
+    el.className = 类 ? ('pill ' + 类) : 'pill';
+    el.textContent = 文案;
+  }
+  // 用 DOM 构造明细行，服务端字符串一律走 textContent，绝不拼进 innerHTML。
+  function 设行容器(sel, 行) {
+    var box = $(sel); if (!box) return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+    (行 || []).forEach(function (r) {
+      var d = document.createElement('div'); d.className = 'chk-row';
+      var b = document.createElement('b'); b.textContent = r[0];
+      var s = document.createElement('span'); s.textContent = r[1];
+      if (r[2]) s.className = r[2];
+      d.appendChild(b); d.appendChild(s); box.appendChild(d);
+    });
+  }
+  function 取主机(u) { try { return new URL(u).host; } catch (e) { return String(u || '-'); } }
+  function 数值(v, 后缀) { return v == null ? '-' : String(v) + (后缀 || ''); }
+
+  function 开始进度(文案) {
+    var bar = $('#chk-bar'); if (bar) bar.classList.add('on');
+    var t0 = Date.now();
+    自检计时器 = setInterval(function () {
+      var n = $('#chk-note'); if (n) n.textContent = 文案 + '（已用 ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s）';
+    }, 200);
+    return t0;
+  }
+  function 结束进度(t0) {
+    if (自检计时器) { clearInterval(自检计时器); 自检计时器 = null; }
+    var bar = $('#chk-bar'); if (bar) bar.classList.remove('on');
+    return ((Date.now() - t0) / 1000).toFixed(1);
+  }
+
   function 渲染自检项(prefix, it) {
     骨架完毕('#chk-' + prefix + '-detail');
-    var pill = $('#chk-' + prefix + '-pill'), detail = $('#chk-' + prefix + '-detail');
+    var 值 = $('#chk-' + prefix + '-val');
     if (!it) {
-      if (pill) { pill.className = 'pill err'; pill.textContent = '无数据'; }
-      if (detail) detail.textContent = '未返回自检项';
-      return { ok: false };
+      设徽章('#chk-' + prefix + '-pill', 'err', '无数据');
+      if (值) 值.textContent = '—';
+      设行容器('#chk-' + prefix + '-detail', [['说明', '服务端未返回该项', 'bad']]);
+      return { ok: false, ms: 0 };
+    }
+    if (prefix === 'ip') {
+      if (it.ok) {
+        设徽章('#chk-ip-pill', 'ok', '正常');
+        if (值) 值.textContent = it.ip || '—';
+        设行容器('#chk-ip-detail', [['地区', it.地区 || '未知'], ['耗时', 数值(it.ms, ' ms')]]);
+        return { ok: true, ms: it.ms || 0 };
+      }
+      设徽章('#chk-ip-pill', 'err', '异常');
+      if (值) 值.textContent = '不可达';
+      设行容器('#chk-ip-detail', [['原因', it.error || '全部 IP 服务不可达', 'bad']]);
+      return { ok: false, ms: it.ms || 0 };
     }
     if (it.ok) {
-      if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; }
-      if (detail) {
-        if (prefix === 'ip') detail.textContent = (it.ip ? ('IP: ' + it.ip + ' · 地区 ' + (it.地区 || '未知')) : '正常') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
-        else detail.textContent = '耗时 ' + (it.ms != null ? it.ms : '-') + ' ms';
-      }
+      设徽章('#chk-' + prefix + '-pill', 'ok', '正常');
+      if (值) 值.textContent = 数值(it.ms, ' ms');
+      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['HTTP', 数值(it.status)]]);
     } else {
-      if (pill) { pill.className = 'pill err'; pill.textContent = '异常'; }
-      if (detail) detail.textContent = (it.error || '不可达') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
+      设徽章('#chk-' + prefix + '-pill', 'err', '异常');
+      if (值) 值.textContent = '不可达';
+      设行容器('#chk-' + prefix + '-detail', [['目标', 取主机(it.url)], ['原因', (it.error || '不可达') + (it.ms != null ? ' · ' + it.ms + ' ms' : ''), 'bad']]);
     }
     return { ok: !!it.ok, ms: it.ms || 0 };
   }
+
   function 渲染深度值(deep) {
     骨架完毕('#chk-deep-detail');
-    var pill = $('#chk-deep-pill'), detail = $('#chk-deep-detail');
     if (!deep) {
-      if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; }
-      if (detail) detail.textContent = '深度诊断未启用';
-      return;
+      设徽章('#chk-deep-pill', '', '未检测');
+      设行容器('#chk-deep-detail', [['说明', '深度诊断未启用']]);
+      return { 坏: 0, 警: 0, 有: 0 };
     }
-    var bits = [], 坏 = 0, 有 = 0;
+    var 行 = [], 坏 = 0, 警 = 0;
+
     var 复用 = deep.复用率;
-    if (复用) { 有++; if (String(复用.hits).startsWith('0/')) 坏++; bits.push('复用命中 ' + 复用.hits); }
+    if (复用) {
+      var 首 = 复用.首轮, 后 = 复用.后续中位;
+      var 份 = String(复用.hits || '0/0').split('/');
+      var 分子 = parseInt(份[0], 10) || 0, 分母 = parseInt(份[1], 10) || 0;
+      var 说明;
+      if (首 != null && 首 >= 3000) { 坏++; 说明 = '采样超时（出口不可达）'; }
+      else if (分子 === 0) { 警++; 说明 = '无复用（每轮均为冷启动建连）'; }
+      else if (分子 < 分母) { 警++; 说明 = '部分复用'; }
+      else 说明 = '稳定复用';
+      行.push(['建连复用', 说明 + ' · 命中 ' + (复用.hits || '-') + ' · 首轮 ' + 数值(首, ' ms') + ' · 后续中位 ' + 数值(后, ' ms'), 坏 ? 'bad' : (警 ? 'warn' : '')]);
+    }
+
     var 预算 = deep.超时预算;
-    if (预算) { 有++; bits.push('黑洞超时 ' + (预算.ms != null ? 预算.ms : '?') + ' ms' + (预算.预算 ? ' / 预算 ' + 预算.预算 : '')); }
+    if (预算) {
+      var 判定 = 预算.判定 || '未知';
+      var 基础 = 判定 + ' · 实测 ' + 数值(预算.ms, ' ms') + ' / 预算 ' + 数值(预算.预算, ' ms');
+      if (判定 === '静默超时') { 警++; 行.push(['超时判定', 基础 + ' · 对端静默丢包，已按预算释放', 'warn']); }
+      else if (判定 === '快速失败') 行.push(['超时判定', 基础 + ' · 无效目标被立即拒绝，预算未被消耗', '']);
+      else 行.push(['超时判定', 基础, '']);
+    }
+
     var 伪装 = deep.伪装页;
     if (伪装) {
-      if (伪装.跳过) bits.push('伪装页 ' + 伪装.跳过);
-      else { 有++; if (!伪装.ok) 坏++; bits.push('伪装 ' + (伪装.status || '?') + (伪装.headers ? ' ' + (伪装.headers['content-type'] || '') + (伪装.headers.有cfray ? ' · 有 cf-ray' : ' · 无 cf-ray') : '')); }
+      if (伪装.跳过) 行.push(['伪装页', 伪装.跳过, '']);
+      else if (伪装.ok) {
+        var h = 伪装.headers || {};
+        行.push(['伪装页', 数值(伪装.status) + (h['content-type'] ? ' · ' + h['content-type'] : '') + (h.有cfray ? ' · 有 cf-ray' : ' · 无 cf-ray'), '']);
+      } else { 坏++; 行.push(['伪装页', '失败：' + (伪装.error || '请求异常'), 'bad']); }
     }
+
     var 代理 = deep.代理;
     if (代理) {
-      if (代理.跳过) bits.push('代理 ' + 代理.跳过);
-      else { 有++; if (!代理.ok) 坏++; bits.push('代理 ' + (代理.ms != null ? 代理.ms + ' ms' : '失败') + (代理.ok ? '' : (代理.error ? ' · ' + 代理.error : ' · 不可达'))); }
+      if (代理.跳过) 行.push(['反代建连', 代理.跳过 + '（auto 模式）', '']);
+      else if (代理.ok) 行.push(['反代建连', 数值(代理.ms, ' ms'), '']);
+      else { 坏++; 行.push(['反代建连', '失败：' + (代理.error || '不可达'), 'bad']); }
     }
-    if (detail) detail.textContent = bits.join(' · ') || '无深度数据';
-    if (!有) { if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; } }
-    else if (坏 > 0) { if (pill) { pill.className = 'pill err'; pill.textContent = '异常 ' + 坏 + ' 项'; } }
-    else { if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; } }
+
+    设行容器('#chk-deep-detail', 行.length ? 行 : [['说明', '无深度数据']]);
+    if (坏) 设徽章('#chk-deep-pill', 'err', '异常 ' + 坏 + ' 项');
+    else if (警) 设徽章('#chk-deep-pill', 'warn', '需关注 ' + 警 + ' 项');
+    else 设徽章('#chk-deep-pill', 'ok', '正常');
+    return { 坏: 坏, 警: 警, 有: 行.length };
   }
+
   function loadCheck(深度) {
+    if (!自检卡 || !自检卡.length) return; // 首帧 switchTab 早于本段初始化
+    自检已跑 = true;
+    var err = $('#chk-err'); if (err) err.innerHTML = '';
     自检卡.forEach(function (k) {
-      var pill = $('#chk-' + k[0] + '-pill'); if (pill) { pill.className = 'pill run'; pill.textContent = '检测中'; }
+      设徽章('#chk-' + k[0] + '-pill', 'run', '检测中');
+      var v = $('#chk-' + k[0] + '-val'); if (v) v.textContent = '…';
+      设行容器('#chk-' + k[0] + '-detail', [['说明', '检测中…']]);
     });
-    var dp = $('#chk-deep-pill'); if (dp) { dp.className = 'pill run'; dp.textContent = '检测中'; }
-    $('#chk-note').textContent = 深度 ? '深度诊断中（约 8–20 秒）…' : '自检中…';
+    if (深度) { 设徽章('#chk-deep-pill', 'run', '检测中'); 设行容器('#chk-deep-detail', [['说明', '采样中…（建连复用 / 超时判定 / 伪装页 / 反代）']]); }
+    else { 设徽章('#chk-deep-pill', '', '未检测'); 设行容器('#chk-deep-detail', [['说明', '未运行深度诊断']]); }
+    设徽章('#chk-overall', 'run', '检测中');
+    var sum = $('#chk-summary'); if (sum) sum.textContent = 深度 ? '深度诊断会真实建连采样，请稍候' : '正在检查出口连通性';
+    var t0 = 开始进度(深度 ? '深度诊断中（约 5–20 秒）' : '自检中');
+
     取('/admin/api/self-check' + (深度 ? '?deep=1' : ''))
       .then(function (d) {
-        var note = $('#chk-note'); if (note) note.textContent = '';
-        var 可达 = 0, 总数 = 0, 总耗时 = 0;
+        自检原始 = d;
+        var 可达 = 0, 总数 = 0, 最慢 = 0;
         自检卡.forEach(function (k) {
           var r = 渲染自检项(k[0], (d && d.quick) ? d.quick[k[1]] : null);
-          if (r) { 总数++; if (r.ok) 可达++; 总耗时 = Math.max(总耗时, r.ms); }
+          总数++; if (r.ok) 可达++; if (r.ms > 最慢) 最慢 = r.ms;
         });
-        渲染深度值(深度 && d ? d.deep : null);
-        var sum = $('#chk-summary'); if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 总耗时 ' + 总耗时 + ' ms';
+        var 深 = 渲染深度值(深度 && d ? d.deep : null);
+        var 用时 = 结束进度(t0);
+        var 类 = 可达 === 总数 ? 'ok' : (可达 === 0 ? 'err' : 'warn');
+        var 文 = 可达 === 总数 ? '全部正常' : (可达 === 0 ? '全部不可达' : '部分异常');
+        if (深 && 深.坏) { 类 = 'err'; 文 = '通道异常'; }
+        else if (深 && 深.警 && 类 === 'ok') { 类 = 'warn'; 文 = '需关注'; }
+        设徽章('#chk-overall', 类, 文);
+        var note = $('#chk-note'); if (note) note.textContent = (深度 ? '深度诊断完成' : '自检完成') + '（用时 ' + 用时 + ' s）';
+        if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 最慢 ' + 最慢 + ' ms' + (深 && 深.有 ? ' · 通道诊断 ' + (深.坏 ? '异常 ' + 深.坏 + ' 项' : (深.警 ? '需关注 ' + 深.警 + ' 项' : '正常')) : '');
+        var at = $('#chk-at');
+        if (at && d && d.at) { try { at.textContent = '检测于 ' + new Date(d.at).toLocaleString(); } catch (e) { at.textContent = ''; } }
       })
-      .catch(function (e) { 内联错误('#chk-note', '自检失败：' + e.message, function () { loadCheck(深度); }); });
+      .catch(function (e) {
+        var 用时 = 结束进度(t0);
+        var note = $('#chk-note'); if (note) note.textContent = '自检失败（用时 ' + 用时 + ' s）';
+        设徽章('#chk-overall', 'err', '失败');
+        自检卡.forEach(function (k) { 设徽章('#chk-' + k[0] + '-pill', 'err', '失败'); });
+        设徽章('#chk-deep-pill', 'err', '失败');
+        内联错误('#chk-err', '自检失败：' + e.message, function () { loadCheck(深度); });
+      });
+  }
+
+  function 复制自检() {
+    if (!自检原始) { toast('暂无自检数据，请先运行', false); return; }
+    copy(JSON.stringify(自检原始, null, 2));
   }
   $('#btn-run-check').addEventListener('click', function () { loadCheck(false); });
   $('#btn-run-deep').addEventListener('click', function () { loadCheck(true); });
-
+  $('#btn-copy-check').addEventListener('click', 复制自检);
+  // 首屏若停留在自检 Tab，自动跑一次快捷自检（深度诊断需手动触发）。
+  try { if (localStorage.getItem('et_admin_tab') === 'check') loadCheck(false); } catch (e) {}
   // 诊断信息
   function loadDiag() {
     取('/admin/config.json').then(function (cfg) {
@@ -1512,39 +1638,56 @@ function 运维Tab(摘) {
 function 自检Tab() {
   return `
 <section class="page" id="page-check" role="tabpanel" data-page="check">
-  <div class="row">
-    <button type="button" class="btn" id="btn-run-check">运行自检</button>
-    <button type="button" class="btn ghost" id="btn-run-deep">深度诊断（约 8–20 秒）</button>
-    <span class="dim" id="chk-note"></span>
+  <div class="card chk-panel">
+    <div class="chk-head">
+      <button type="button" class="btn" id="btn-run-check">运行自检</button>
+      <button type="button" class="btn ghost" id="btn-run-deep" title="含建连复用/超时判定/伪装页/反代建连采样">深度诊断</button>
+      <button type="button" class="iconbtn" id="btn-copy-check" title="复制完整诊断 JSON，便于反馈">复制 JSON</button>
+      <span class="dim" id="chk-note">未检测</span>
+    </div>
+    <div class="chk-bar" id="chk-bar"><i></i></div>
+    <div class="chk-sum">
+      <span class="pill" id="chk-overall">未检测</span>
+      <span class="dim" id="chk-summary">点击“运行自检”检查本 Worker 的出口连通性</span>
+      <span class="dim" id="chk-at"></span>
+    </div>
+    <div id="chk-err"></div>
   </div>
   <div class="chk-grid">
-    <div class="card chk">
-      <h2>国内连通</h2>
-      <span class="pill" id="chk-cn-pill" data-chk="cn">未检测</span>
-      <div class="mono dim" id="chk-cn-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    <div class="card chk" id="chk-cn">
+      <div class="chk-top"><span class="chk-name">国内连通</span><span class="pill" id="chk-cn-pill">未检测</span></div>
+      <div class="chk-val" id="chk-cn-val">—</div>
+      <div class="chk-kv dim" id="chk-cn-detail">点击“运行自检”查看</div>
     </div>
-    <div class="card chk">
-      <h2>国外连通</h2>
-      <span class="pill" id="chk-ow-pill" data-chk="ow">未检测</span>
-      <div class="mono dim" id="chk-ow-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    <div class="card chk" id="chk-ow">
+      <div class="chk-top"><span class="chk-name">国外连通</span><span class="pill" id="chk-ow-pill">未检测</span></div>
+      <div class="chk-val" id="chk-ow-val">—</div>
+      <div class="chk-kv dim" id="chk-ow-detail">点击“运行自检”查看</div>
     </div>
-    <div class="card chk">
-      <h2>CF CDN</h2>
-      <span class="pill" id="chk-cf-pill" data-chk="cf">未检测</span>
-      <div class="mono dim" id="chk-cf-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    <div class="card chk" id="chk-cf">
+      <div class="chk-top"><span class="chk-name">Cloudflare CDN</span><span class="pill" id="chk-cf-pill">未检测</span></div>
+      <div class="chk-val" id="chk-cf-val">—</div>
+      <div class="chk-kv dim" id="chk-cf-detail">点击“运行自检”查看</div>
     </div>
-    <div class="card chk">
-      <h2>落地IP</h2>
-      <span class="pill" id="chk-ip-pill" data-chk="ip">未检测</span>
-      <div class="mono dim" id="chk-ip-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
-    </div>
-    <div class="card chk">
-      <h2>通道诊断</h2>
-      <span class="pill" id="chk-deep-pill" data-chk="deep">未检测</span>
-      <div class="mono dim" id="chk-deep-detail" data-skeleton>深度诊断未启用<div class="sk"></div></div>
+    <div class="card chk" id="chk-ip">
+      <div class="chk-top"><span class="chk-name">落地 IP</span><span class="pill" id="chk-ip-pill">未检测</span></div>
+      <div class="chk-val" id="chk-ip-val">—</div>
+      <div class="chk-kv dim" id="chk-ip-detail">点击“运行自检”查看</div>
     </div>
   </div>
-  <div class="mono dim" id="chk-summary"></div>
+  <div class="card chk chk-wide" id="chk-deep">
+    <div class="chk-top">
+      <span class="chk-name">通道诊断</span>
+      <span class="pill" id="chk-deep-pill">未检测</span>
+    </div>
+    <div class="chk-kv dim" id="chk-deep-detail">
+      <div class="chk-row"><b>建连复用</b><span>深度诊断未启用</span></div>
+      <div class="chk-row"><b>超时判定</b><span>深度诊断未启用</span></div>
+      <div class="chk-row"><b>伪装页</b><span>深度诊断未启用</span></div>
+      <div class="chk-row"><b>反代建连</b><span>深度诊断未启用</span></div>
+    </div>
+    <p class="dim" id="chk-deep-hint">深度诊断会真实建连采样（约 5–20 秒）；数据用于判断是否收紧握手超时预算与连接复用策略。</p>
+  </div>
 </section>`;
 }
 
@@ -2750,39 +2893,45 @@ function 解析反代地址(候选) {
   return { hostname, port: port || 80 };
 }
 async function 连接复用采样(hostname = "example.com", port = 443, 次数 = 6) {
-  const times = [];
+  const times = [], 保持 = [];
   for (let i = 0; i < 次数; i++) {
     const 起始 = Date.now();
-    let socket;
     try {
-      socket = cloudflareConnect({ hostname, port }, { secureTransport: "on", allowHalfOpen: false });
+      const socket = cloudflareConnect({ hostname, port }, { secureTransport: "on", allowHalfOpen: false });
+      保持.push(socket);
       await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3e3))]);
     } catch (error) {
     }
     times.push(Date.now() - 起始);
+  }
+  for (const s of 保持) {
     try {
-      socket?.close?.();
+      s?.close?.();
     } catch (error) {
     }
   }
   const 首轮 = times[0];
-  let hits = 0;
-  if (首轮 < 3e3) hits = times.slice(1).filter((t) => t < 首轮 * 0.6).length;
-  return { hits: hits + "/" + (次数 - 1), times };
+  const 后续 = times.slice(1);
+  const 命中数 = 首轮 < 3e3 ? 后续.filter((t) => t < 首轮 * 0.6).length : 0;
+  const 排序 = [...后续].sort((a, b) => a - b);
+  return { hits: 命中数 + "/" + (次数 - 1), times, 首轮, 后续中位: 排序.length ? 排序[Math.floor(排序.length / 2)] : null };
 }
 async function 黑洞超时采样(预算ms = 6e3) {
   const 起始 = Date.now();
-  let socket;
+  let socket, 错误 = null;
   try {
     socket = cloudflareConnect({ hostname: "192.0.2.1", port: 443 });
     await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 预算ms))]);
   } catch (error) {
+    错误 = String(error?.message || error);
   }
   try {
     socket?.close?.();
   } catch (error) {
   }
-  return { ms: Date.now() - 起始, 预算: 预算ms };
+  const ms = Date.now() - 起始;
+  const 判定 = 错误 ? "快速失败" : ms >= 预算ms ? "静默超时" : "已建立";
+  return { ms, 预算: 预算ms, 判定, error: 错误 };
 }
 async function 代理建连采样(request, env, 配置) {
   const 候选列表 = [

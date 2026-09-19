@@ -74,10 +74,28 @@ td.mn{width:200px;color:var(--mut)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 #toast.ok{border-color:var(--ok);color:var(--ok)}#toast.ok::before{content:"✓ "}
 #toast.err{border-color:var(--err);color:var(--err)}#toast.err::before{content:"✕ "}
+.chk-panel{margin-bottom:14px}
+.chk-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chk-bar{display:none;height:3px;margin:12px 0 0;background:color-mix(in srgb,var(--acc) 14%,transparent);overflow:hidden}
+.chk-bar.on{display:block}
+.chk-bar i{display:block;height:100%;width:34%;background:linear-gradient(90deg,var(--acc2),var(--acc));animation:chk-slide 1.1s ease-in-out infinite}
+@keyframes chk-slide{0%{margin-left:-34%}100%{margin-left:100%}}
+.chk-sum{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
 .chk{min-height:118px;margin:0}
-.pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;background:var(--surf)}
+.chk-wide{grid-column:1/-1}
+.chk-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.chk-name{font-size:12px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
+.chk-val{font:600 20px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin-bottom:8px;overflow-wrap:anywhere}
+.chk-kv{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.chk-row{display:flex;gap:8px;align-items:baseline}
+.chk-row b{flex:0 0 74px;color:var(--mut);font-weight:400}
+.chk-row span{flex:1;overflow-wrap:anywhere}
+.chk-row span.bad{color:var(--err)}
+.chk-row span.warn{color:var(--warn)}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;background:var(--surf);white-space:nowrap}
 .pill.ok{color:var(--ok);border-color:var(--ok)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
 .pill.err{color:var(--err);border-color:var(--err)}
 .pill.run{color:var(--warn);border-color:var(--warn);animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
