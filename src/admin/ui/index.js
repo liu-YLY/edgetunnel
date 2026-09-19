@@ -100,16 +100,16 @@ function 快捷键帮助浮层() {
 function 页头(sse) {
   return `<header>
   <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
-  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
+  <div class="row"><button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色">◐ 主题</button><button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">≋ 动效</button><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
 </header>`;
 }
 
 function 主导航() {
-  return `<nav>
-  <button type="button" class="on" data-tab="overview">概览</button>
-  <button type="button" data-tab="nodes">节点与订阅</button>
-  <button type="button" data-tab="config">配置</button>
-  <button type="button" data-tab="ops">运维</button>
+  return `<nav role="tablist" aria-label="面板分区">
+  <button type="button" class="on" role="tab" aria-selected="true" aria-controls="page-overview" data-tab="overview">概览</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-nodes" data-tab="nodes">节点与订阅</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-config" data-tab="config">配置</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-ops" data-tab="ops">运维</button>
 </nav>`;
 }
 

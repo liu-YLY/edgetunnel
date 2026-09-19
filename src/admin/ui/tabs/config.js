@@ -3,7 +3,7 @@ import { 转义HTML } from '../../../core/html.js';
 // 配置 Tab：常用字段、KV 全量配置编辑器与环境变量只读表。
 function 配置Tab(摘, env只读行) {
   return `
-<section class="page" data-page="config">
+<section class="page" id="page-config" role="tabpanel" data-page="config">
   <div class="card">
     <h2>常用字段</h2>
     <div class="kvList">

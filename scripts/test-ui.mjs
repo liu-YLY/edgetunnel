@@ -61,6 +61,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
+  // 3) 主题/动效切换入口与 Tab 可访问性
+  for (const 标记 of ['id="btn-theme"', 'id="btn-motion"', 'role="tablist"', 'role="tabpanel"', 'aria-selected']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
 })().catch((e) => { console.error('[test-ui] FAIL:', e); process.exit(1); });

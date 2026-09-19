@@ -681,6 +681,50 @@ var 客户端脚本 = `
   }
   function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : String(n || 0); }
 
+  // —— 主题与动效 ——
+  function 当前主题() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function 设置主题(v) {
+    var t = v || (当前主题() === 'dark' ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('et_admin_theme', t); } catch (e) {}
+    toast('主题：' + (t === 'light' ? '浅色' : '深色'), true);
+  }
+  var 动效档 = ['full', 'lite', 'off'];
+  function 当前动效() { var v = document.documentElement.getAttribute('data-motion'); return 动效档.indexOf(v) >= 0 ? v : 'full'; }
+  function 设置动效(v) {
+    var i = 动效档.indexOf(当前动效());
+    var t = v || 动效档[(i + 1) % 动效档.length];
+    document.documentElement.setAttribute('data-motion', t);
+    try { localStorage.setItem('et_admin_motion', t); } catch (e) {}
+    toast('动效：' + ({ full: '完整', lite: '精简', off: '关闭' })[t], true);
+  }
+  $('#btn-theme').addEventListener('click', function () { 设置主题(); });
+  $('#btn-motion').addEventListener('click', function () { 设置动效(); });
+
+  // —— 弹层焦点管理：打开时聚焦首元素，Tab 循环，Esc 关闭后聚焦回触发元素 ——
+  var 焦点栈 = [];
+  function 打开弹层(el, 首元素) {
+    焦点栈.push(document.activeElement);
+    el.classList.add('open');
+    var f = 首元素 || el.querySelector('button,input,textarea,select,a[href]');
+    if (f) f.focus();
+  }
+  function 关闭弹层(el) {
+    el.classList.remove('open');
+    var back = 焦点栈.pop();
+    if (back && back.focus) back.focus();
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+    var open = document.querySelector('.open[role="dialog"]');
+    if (!open) return;
+    var els = open.querySelectorAll('button,input,textarea,select,a[href]');
+    if (!els.length) return;
+    var first = els[0], last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+
   // 概览增强：实时时钟（Task2）
   function tickClock() {
     var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
@@ -708,7 +752,7 @@ var 客户端脚本 = `
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
   function switchTab(btn) {
-    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); });
+    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
     Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
     try { localStorage.setItem('et_admin_tab', btn.dataset.tab); } catch (e) {}
     if (btn.dataset.tab === 'overview') loadOverview();
@@ -939,7 +983,7 @@ var 客户端脚本 = `
 // src/admin/ui/tabs/overview.js
 function 概览Tab(摘) {
   return `
-<section class="page on" data-page="overview">
+<section class="page on" id="page-overview" role="tabpanel" data-page="overview">
   <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
   <div class="card">
     <h2>请求用量</h2>
@@ -979,7 +1023,7 @@ function 概览Tab(摘) {
 // src/admin/ui/tabs/nodes.js
 function 节点Tab() {
   return `
-<section class="page" data-page="nodes">
+<section class="page" id="page-nodes" role="tabpanel" data-page="nodes">
   <div class="card">
     <h2>主节点</h2>
     <div class="mono" id="nlink-code"></div>
@@ -1015,7 +1059,7 @@ function 节点Tab() {
 // src/admin/ui/tabs/config.js
 function 配置Tab(摘, env只读行) {
   return `
-<section class="page" data-page="config">
+<section class="page" id="page-config" role="tabpanel" data-page="config">
   <div class="card">
     <h2>常用字段</h2>
     <div class="kvList">
@@ -1045,7 +1089,7 @@ function 配置Tab(摘, env只读行) {
 // src/admin/ui/tabs/ops.js
 function 运维Tab(摘) {
   return `
-<section class="page" data-page="ops">
+<section class="page" id="page-ops" role="tabpanel" data-page="ops">
   <div class="card">
     <h2>诊断信息</h2>
     <div class="mono" id="diag"></div>
@@ -1172,15 +1216,15 @@ function 快捷键帮助浮层() {
 function 页头(sse) {
   return `<header>
   <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
-  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
+  <div class="row"><button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色">◐ 主题</button><button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">≋ 动效</button><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
 </header>`;
 }
 function 主导航() {
-  return `<nav>
-  <button type="button" class="on" data-tab="overview">概览</button>
-  <button type="button" data-tab="nodes">节点与订阅</button>
-  <button type="button" data-tab="config">配置</button>
-  <button type="button" data-tab="ops">运维</button>
+  return `<nav role="tablist" aria-label="面板分区">
+  <button type="button" class="on" role="tab" aria-selected="true" aria-controls="page-overview" data-tab="overview">概览</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-nodes" data-tab="nodes">节点与订阅</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-config" data-tab="config">配置</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-ops" data-tab="ops">运维</button>
 </nav>`;
 }
 
