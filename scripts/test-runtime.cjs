@@ -17,7 +17,7 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   const login=await call('/login',{method:'POST',body:'password=runtime-test-password'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];assert.ok(cookie.startsWith('auth='));
   const config=await call('/admin/config.json',{headers:{Cookie:cookie}});assert.equal(config.status,200);assert.equal((await config.json()).HOST,'runtime.example');
   assert.equal((await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Origin:'https://evil.example'},body:'{}'})).status,403);
-  assert.ok((await (await call('/admin',{headers:{Cookie:cookie}})).text()).includes('saveCfg'));
+  assert.ok((await (await call('/admin',{headers:{Cookie:cookie}})).text()).includes('edgetunnel 管理面板'));
   const invalid=await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{"反代":null}'});assert.equal(invalid.status,400);
   const valid=await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{"PATH":"/runtime"}'});assert.equal(valid.status,200);
   const saved=await (await mf.getKVNamespace('KV')).get('cfg:runtime.example','json');assert.equal(saved.PATH,'/runtime');assert.ok(saved.配置版本);
