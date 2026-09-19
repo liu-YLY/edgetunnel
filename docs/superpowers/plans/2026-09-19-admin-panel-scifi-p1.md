@@ -475,7 +475,7 @@ git commit -m "feat(admin): 落地 A+D 融合视觉（切角 HUD + 深蓝令牌�
 
 ```js
   // 3) 主题/动效切换入口与 Tab 可访问性
-  for (const 标记 of ['id="btn-theme"', 'id="btn-motion"', 'id="cmdk"', 'id="cmd-input"', 'role="tablist"', 'role="tabpanel"', 'aria-selected']) {
+  for (const 标记 of ['id="btn-theme"', 'id="btn-motion"', 'role="tablist"', 'role="tabpanel"', 'aria-selected']) {
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 ```
@@ -583,7 +583,19 @@ git commit -m "feat(admin): 深/浅主题与三档动效切换、弹层焦点管
 **Files:**
 - Modify: `src/admin/ui/index.js`（注入 `#cmdk` 浮层）
 - Modify: `src/admin/ui/client.js`（动作表 + 模糊匹配 + 键盘）
-- Test: `scripts/test-ui.mjs`（断言见 Task 3 Step 1，已含 `#cmdk`/`#cmd-input`）
+- Test: `scripts/test-ui.mjs`
+
+- [ ] **Step 0: 加断言**
+
+```js
+  // 4) 命令面板
+  for (const 标记 of ['id="cmdk"', 'id="cmd-input"', 'id="cmd-list"', 'id="cmd-empty"']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+```
+
+Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs`
+Expected: FAIL（`id="cmdk"`）。
 
 - [ ] **Step 1: `index.js` 注入命令面板浮层**
 
@@ -629,7 +641,7 @@ function 命令面板() {
     { 名: '运维：重置配置为默认值', 组: '运维', 跑: function () { 点('#btn-init'); } },
     { 名: '切换主题', 组: '外观', 跑: function () { 设置主题(); } },
     { 名: '切换动效档位', 组: '外观', 跑: function () { 设置动效(); } },
-    { 名: '打开快捷键帮助', 组: '外观', 跑: function () { 点('#kbd-help') || 打开弹层($('#kbd-help')); } },
+    { 名: '打开快捷键帮助', 组: '外观', 跑: function () { 打开弹层($('#kbd-help')); } },
     { 名: '打开 Workers 日志控制台', 组: '外观', 跑: function () { window.open('https://dash.cloudflare.com/?to=/:account/workers/services/edit/edgetunnel/production/logs', '_blank', 'noopener'); } },
   ];
   function 点(sel) { var el = document.querySelector(sel); if (el) el.click(); return !!el; }
@@ -717,6 +729,11 @@ function 命令面板() {
 ```
 同时把既有的 `closeQR()`、`#btn-kbd-close`、遮罩点击绑定改为调用 `关闭弹层(...)`，并把「打开二维码」改为 `打开弹层($('#qr-modal'))`；快捷键帮助里的文案加上 `⌘K` 一行。
 
+**另外必须处理的两个既有遗留**（否则 Esc 会被处理两次、且关闭后不归还焦点）：
+
+1. `client.js` 里 L136 附近那条独立监听 `document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQR(); });` —— **整条删除**，Esc 统一交给上面改好的快捷键监听里的 `关所有弹层()`。
+2. `#qr-modal` 的遮罩点击绑定（`if (e.target === this) closeQR();`）改为 `关闭弹层($('#qr-modal'))`；`#kbd-help` 的遮罩点击同样改为 `关闭弹层($('#kbd-help'))`。
+
 - [ ] **Step 4: 跑测试 + 构建校验**
 
 Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs && npm run build && npm run check`
@@ -734,7 +751,8 @@ git commit -m "feat(admin): 命令面板（⌘/Ctrl+K，含全部内置动作与
 ### Task 5: 配置编辑器增强（内联校验 / diff 预览 / 草稿 / 撤销重做）
 
 **Files:**
-- Modify: `src/admin/ui/index.js`（`配置Tab` 外层加校验区与 diff 浮层）
+- Modify: `src/admin/ui/index.js`（新增并注入 `差异浮层()`）
+- Modify: `src/admin/ui/tabs/config.js`（在 JSON 卡片的 `<textarea id="cfg">` 之后插入 `<div id="cfg-check" role="status" aria-live="polite"></div>`）
 - Modify: `src/admin/ui/client.js`
 - Test: `scripts/test-ui.mjs`
 
@@ -900,6 +918,8 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
 
 **Files:**
 - Modify: `src/admin/ui/client.js`
+- Modify: `src/admin/ui/tabs/overview.js`（趋势图卡片容器加 `data-skeleton` + 骨架条）
+- Modify: `src/admin/ui/tabs/ops.js`（`#diag` 上方加 `data-skeleton` + 骨架条）
 - Test: `scripts/test-ui.mjs`
 
 - [ ] **Step 1: 加断言**
@@ -909,6 +929,39 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 ```
+
+- [ ] **Step 1.5: 加"内联脚本语法"断言（永久守卫模板字符串转义类缺陷）**
+
+背景：`client.js` 是模板字符串，内部代码里的 `'\n'`、`/[\s]/` 若只写单反斜杠，求值后会变成真换行/丢掉 `\s`，生成的 `<script>` 会语法错误；而 `verify.js` 的 `node --check` 只校验外层 bundle，**抓不到**。Task 5 曾真实触发该缺陷，故固化为断言。
+
+```js
+  // 5) 每个内联 <script> 段都必须语法正确（覆盖 client.js 模板字符串转义问题）
+  const 内联段 = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  assert.ok(内联段.length >= 3, `应有至少 3 个内联脚本段，实际 ${内联段.length}`);
+  内联段.forEach((段, i) => {
+    try { new Function(段); } catch (e) { assert.fail(`第 ${i + 1} 个内联脚本语法错误：${e.message}`); }
+  });
+```
+
+Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs`
+Expected: PASS（若此时 FAIL，说明已有内联脚本语法错误，必须先修好再继续）。
+
+- [ ] **Step 1.6: 加"元素 id 引用"断言（执行期补入，守卫运行时崩溃）**
+
+背景：`client.js` 里任何 `$('#x').addEventListener(...)` 若 `#x` 不存在，都会在运行时抛 `null.addEventListener` 而中断整个脚本（面板直接不可用，且静态测试原本抓不到）。执行 Task 6 时补入此断言。
+
+```js
+  // 8) client.js 引用的元素 id 必须都出现在产物 HTML 中
+  const 客户端源码 = readFileSync(new URL('../src/admin/ui/client.js', import.meta.url), 'utf8');
+  const 引用id = new Set([
+    ...[...客户端源码.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]),
+    ...[...客户端源码.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]),
+  ]);
+  const 缺失id = [...引用id].filter((x) => !html.includes(`id="${x}"`));
+  assert.deepEqual(缺失id, [], `client.js 引用了产物中不存在的 id：${缺失id.join(', ')}`);
+```
+
+需在文件头补 `import { readFileSync } from 'node:fs';`。
 
 - [ ] **Step 2: 跑测试确认失败**
 
