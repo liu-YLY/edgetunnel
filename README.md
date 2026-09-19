@@ -29,6 +29,7 @@ Node.js 22+；固定构建与测试依赖版本。`check` 包含模块边界、�
 - `/login`、`/admin` 默认本地页面。旧远程管理面板仅在 `REMOTE_ADMIN=true` 时启用。
 - 日志使用脱敏 Workers Logs，不再更新单个 KV 大 JSON；用量统计在后台刷新。
 - 原客户端订阅保持；`native=1` 可选择 Clash/Mihomo 或 sing-box 最小原生配置，支持范围见部署指南。
+- 管理面板内置“优选 IP 测速与编辑”：登录后对候选 IP 做 TCP 连通测速（会话内端点 `/admin/probe`），编辑结果保存到 KV `ADD.txt`；使用固定 IP 作订阅节点时把配置 JSON 的 `优选订阅生成.本地IP库.随机IP` 设为 `false`。
 
 ## 维护
 

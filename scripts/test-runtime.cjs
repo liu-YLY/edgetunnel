@@ -48,6 +48,25 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   const ssResponse=await call('/?enc=aes-128-gcm',{headers:{Upgrade:'websocket'}});const sws=ssResponse.webSocket;sws.accept();
   const ssdata=await new Promise((resolve,reject)=>{let chunks=Buffer.alloc(0);const timer=setTimeout(()=>reject(new Error('SS timeout')),5000);sws.addEventListener('message',e=>{chunks=Buffer.concat([chunks,Buffer.from(e.data)]);if(chunks.length>=34){const k=sessionKey(chunks.subarray(0,16));const n=open(k,0,chunks.subarray(16,34)).readUInt16BE();if(chunks.length>=34+n+16){clearTimeout(timer);resolve(open(k,1,chunks.subarray(34,34+n+16)));}}});sws.send(ssframe.slice(0,10));sws.send(ssframe.slice(10));});
   assert.equal(ssdata.toString(),'ss-echo');sws.close(1000);
+  // M1-P2：admin/probe 需登录会话；探测本地 echo 端口应可达，已关闭端口应不可达。
+  const probe401 = await call('/admin/probe?target=127.0.0.1:1');
+  assert.equal(probe401.status, 302);
+  const probeOk = await call('/admin/probe?target=' + '127.0.0.1:' + port, { headers: { Cookie: cookie } });
+  assert.equal(probeOk.status, 200);
+  const probeJson = await probeOk.json();
+  assert.equal(probeJson.ok, true);
+  assert.ok(probeJson.ms >= 0);
+  const probeBad = await call('/admin/probe?target=127.0.0.1:1', { headers: { Cookie: cookie } });
+  const probeBadJson = await probeBad.json();
+  assert.equal(probeBadJson.ok, false);
+  assert.equal((await call('/admin/probe?target=not-an-ip', { headers: { Cookie: cookie } })).status, 400);
+  // M1-P2：ADD.txt 保存后可由订阅节点读取链路回读（本地 KV）。
+  const customIps = '127.0.0.1:' + port + '#local\n';
+  const saveIps = await call('/admin/ADD.txt', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'text/plain' }, body: customIps });
+  assert.equal(saveIps.status, 200);
+  const savedIps = await (await mf.getKVNamespace('KV')).get('ADD.txt');
+  assert.equal(savedIps, customIps);
+  assert.equal((await call('/admin/ADD.txt', { headers: { Cookie: cookie } })).status, 200);
   console.log('[PASS] workerd 登录/鉴权/配置校验/KV 写入/跨站拒绝/分帧 VLESS/Trojan/SS WebSocket→原生 TCP→回传');
  } finally { await mf?.dispose(); for(const s of sockets)s.destroy(); await new Promise(r=>echo.close(r)); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
