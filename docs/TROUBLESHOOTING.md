@@ -70,14 +70,14 @@
 
 | # | 级别 | 问题 | 影响 | 建议动作 |
 |---|---|---|---|---|
-| 1 | **P0** | `KEY` 未设置，UUID/Token 用默认密钥字符串（"勿动此默认密钥…"）派生 | 快速订阅路径可被猜测，派生密钥公开于源码 | `wrangler secret put KEY` 设置强随机值；注意设置后 UUID/TOKEN 会变，客户端需重新订阅 |（状态：待办）
-| 2 | **P0** | `ADMIN` / `UUID` 为 plaintext binding | 面板密码与 UUID 明文存于配置 | 迁移 `secret_text`（`wrangler secret put`），`keep_vars` 不影响 secrets |
+| 1 | ~~**P0**~~ 已解决 | ~~`KEY` 未设置，UUID/Token 用默认密钥字符串（"勿动此默认密钥…"）派生~~ | — | **已解决（2026-09-19 核实）**：线上 `KEY` 为 `secret_text` 自定义值（面板掩码 `66d…67`），非源码默认串；`UUID` 由 env 直接提供，不再走 `MD5(ADMIN+KEY)` 派生 |
+| 2 | ~~**P0**~~ 已解决 | ~~`ADMIN` / `UUID` 为 plaintext binding~~ | — | **已解决（2026-09-19 核实）**：`ADMIN`、`KEY`、`UUID` 经 Cloudflare settings API 实测均为 `secret_text` |
 | 3 | P1 | `region` 出站模式仍依赖第三方 `{wk}.SsSs.nEt` 模板 | 该域名族稳定性不可控（本账号曾 61+ 次异常相关） | 仅显式 opt-in 才启用（现状安全）；长期以官方直连池替代，或自建地区出口 |
 | 4 | P1 | 订阅转换仍依赖外部 SUBAPI（clash/singbox/surge/loon/quanx 分支） | 转换器故障 → 订阅不可用（已有 10s 超时兜底，但仍是单点） | 参照 cfnew v2.9.8c 全格式 Worker 内化；shadowrocket/v2rayn 已直出可作样板 |
-| 5 | P1 | 每请求读 KV（config.json + cfg:{host}），无内存缓存层 | KV 延迟放大并发压力，历史上 loadShed 的帮凶 | M2-P1 计划：`c_ver` 版本键 + isolate 级 5h 缓存 + 30s 短窗 |
+| 5 | P1（部分缓解） | 每请求读 KV（config.json + cfg:{host}），内存缓存 TTL 仅 30s | 冷启动/长尾仍会放大 KV 延迟 | **现状**：M2-P1 最小版 30s isolate 内存缓存已上线；更长 TTL + `c_ver` 版本键仍未做 |
 | 6 | P2 | 与上游 cmliu/edgetunnel 已结构性分叉（src/ 多模块 vs 上游单文件） | 无法直接 merge 上游；上游安全修复需手工移植 | 定期 diff 上游关键 fix（如 Grain 合包流改进），手工移植 + golden 测试护航 |
-| 7 | P2 | compat date `2025-11-04` 偏旧 | 无法使用新运行时特性；旧 flag 有弃用风险 | 随下一个功能版本统一提升，并在 staging 域名先验证 |
-| 8 | P2 | `读取config_JSON` 的 UsageAPI 查询在请求路径上（非 waitUntil） | /sub 响应被用量查询拖慢（已有 8s 超时） | 迁入 `ctx.waitUntil` 或加短 TTL 缓存 |
+| 7 | P2 | compat date `2025-11-04` 偏旧 | 无法使用新运行时特性；旧 flag 有弃用风险 | 随下一个功能版本统一提升，并在独立测试域名先验证 |
+| 8 | ~~P2~~ 已解决 | ~~`读取config_JSON` 的 UsageAPI 查询在请求路径上（非 waitUntil）~~ | — | **已解决（2026-09-19 核实）**：用量刷新已迁入 `ctx.waitUntil`（`读取config_JSON` 末尾），并配 60s 节流与 isolate 级缓存 |
 | 9 | P3 | 孤儿 KV `subscribe-kv (0db20ae1…)` 仍未绑定 | 命名空间泄漏 | 确认 subscribe-worker 是否需要，不需要则删 |
 | 10 | P3 | Cloudflare D1 指标 `num_tables=0` 但库实际有数据 | 审计时易误判"空库" | 平台指标特性；核对请用 `wrangler d1 execute <db> --command "SELECT name FROM sqlite_master WHERE type='table'"` |
 

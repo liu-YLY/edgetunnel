@@ -6,9 +6,8 @@
     "test": "node scripts/test-modules.cjs && node --import ./scripts/register-test-loader.mjs scripts/test-config.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-subscribe.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-regression.mjs",
     "test:runtime": "node scripts/test-runtime.cjs",
     "check": "node scripts/verify.js && npm test",
-    "dev": "wrangler dev --env staging",
+    "dev": "wrangler dev",
     "deploy:check": "wrangler deploy --env \"\" --dry-run --outdir dist",
-    "deploy:staging": "npm run check && wrangler deploy --env staging",
     "deploy": "npm run check && wrangler deploy --env \"\""
   },
   "devDependencies": {

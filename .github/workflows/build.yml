@@ -2,17 +2,11 @@ name: Build Drift Check
 
 # 防漂移策略（2026-09-05 定案）：源码变更后若 _worker.js（部署产物）未同步更新，
 # 本工作流直接报错提示，不做自动提交，保持 main 提交历史由人控制。
+#
+# 分工（2026-09-19）：本工作流只跑 pull_request，作为合并前门禁；
+# push main 由 deploy.yml 承担同一套校验（check + test:runtime + deploy:check）后直接部署，
+# 避免同一次 push 上两个工作流重复执行 npm ci + npm run check。
 on:
-  push:
-    paths:
-      - 'src/**'
-      - 'build.js'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '_worker.js'
-      - 'wrangler.toml'
-      - '.github/workflows/**'
   pull_request:
     paths:
       - 'src/**'

@@ -1,6 +1,6 @@
 # Cloudflare 部署与本次修复
 
-更新：2026-09-16。本文件和根 README 描述当前实现；旧里程碑的线上结果不作为本版本发布证据。
+更新：2026-09-19。本文件和根 README 描述当前实现；旧里程碑的线上结果不作为本版本发布证据。
 
 ## 本地验证
 
@@ -20,17 +20,41 @@ npm run deploy:check
 - `deploy:check`：Wrangler 打包 dry-run，不部署。
 - 本地测试不能证明 CF 边缘出站、跨地区 KV 同步、真实客户端兼容或生产容量。
 
-## 环境隔离
+## 自动部署（GitHub Actions → Cloudflare）
 
-根 wrangler.toml 保留已有生产名称及 KV。staging 有独立名称，不继承生产 KV/Secrets。
+push 到 `main`、且改动落在 `src/**`、`build.js`、`scripts/**`、`package*.json`、`_worker.js`、`wrangler.toml`、`.github/workflows/**` 时，`.github/workflows/deploy.yml` 自动执行：
 
-1. `npm exec -- wrangler kv namespace create KV --env staging` 创建独立测试 namespace。
-2. 将返回 id 填入 `[[env.staging.kv_namespaces]]`；不要复用生产 id。
-3. 分别执行 `npm exec -- wrangler secret put ADMIN --env staging`、`KEY`、`UUID`，交互输入独立测试值。UUID 使用 UUIDv4。
-4. 运行 `npm run deploy:staging`。仅在明确配置 staging 资源后执行。
-5. 完成测试域名验收后，单独决定生产发布。`npm run deploy` 指向顶层生产环境。
+1. `npm ci` → `npm run check`（含防漂移字节比对与全部测试）
+2. `npm run test:runtime`（workerd 集成）、`npm run deploy:check`（打包 dry-run）
+3. 幂等重写生产 secrets：`ADMIN`、`KEY`、`UUID`（自愈，防止部署清空仪表盘凭据）
+4. `npx wrangler deploy` → 生产服务 `edgetunnel`
 
-本地 `npm run dev` 使用 staging 配置；测试凭据放 `.dev.vars.staging`，已忽略提交。不要在命令行中明文提供生产密码。保留 compatibility_date，新增原生 AsyncLocalStorage 所需 nodejs_als；日期升级另行验证。
+要点：
+
+- **部署目标由 [wrangler.toml](../wrangler.toml) 的 `name` 与 `account_id` 唯一定义**，当前为 `edgetunnel`。改动 `name` 前必须先确认自定义域名绑定的服务名，否则 CI 会"成功"部署到无人访问的脚本（本仓库曾误指向 `v20251104`）。
+- GitHub 仓库 Secrets 需配置 `CLOUDFLARE_API_TOKEN`（权限 `Account → Workers Scripts → Edit`）。`ADMIN`、`UUID`、`KEY` 可选：已配置的项会被幂等重写，留空的项跳过、不影响线上既有值。
+- `OFF_LOG` 在 Worker 上是 plain_text 变量，同名无法再建 secret（Cloudflare 报 10053），由 `keep_vars = true` 保留，故不纳入自愈。
+- 未配置 `CLOUDFLARE_API_TOKEN` 的 fork 只跑校验并自动跳过部署。
+- PR 门禁由 `.github/workflows/build.yml` 承担：同样跑 check + test:runtime + deploy:check，但不部署。push main 的门禁由 deploy.yml 一并完成，两条路径不重复执行。
+- 也可在仓库 Actions 页面手动 `Run workflow` 触发一次。
+
+## 本地手动部署
+
+`npm run deploy`（= `npm run check && wrangler deploy --env ''`）绕过 CI 直接发布，目标是同一个生产服务。需要 `CLOUDFLARE_API_TOKEN` 或已登录的 wrangler。
+
+注意：手动路径**不会**执行 secrets 自愈步骤。若与 CI 混用，建议以 CI 作为唯一发布入口，避免"代码已换、凭据来源不明"的分叉。
+
+## 环境隔离（按需自建，仓库不预置）
+
+本仓库不预置 staging 环境——原先的 `[env.staging]` 缺少独立 KV namespace id、线上也从未创建过 `edgetunnel-staging`，属"文档写了但用不了"的半成品，已于 2026-09-19 移除。需要隔离验证时显式创建：
+
+1. `npx wrangler kv namespace create KV` 创建独立 namespace，**不要复用生产 id**。
+2. 在 wrangler.toml 新增 `[env.staging]` 段，填入独立 `name`、`workers_dev = true` 与上一步返回的 KV id。
+3. 分别执行 `npx wrangler secret put ADMIN --env staging`、`KEY`、`UUID`，交互输入独立测试值（UUID 使用 UUIDv4）。
+4. `npx wrangler deploy --env staging`，并在独立测试域名上完成验收。
+5. 验收通过后，再单独决定生产发布。
+
+本地开发使用 `npm run dev`（wrangler 本地模拟，默认不触碰线上资源）。不要在命令行中明文提供生产密码。保留 `compatibility_date`；新增原生 AsyncLocalStorage 所需的 `nodejs_als`，日期升级需另行验证。
 
 ## 行为变化与迁移
 

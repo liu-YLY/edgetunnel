@@ -16,9 +16,9 @@ Node.js 22+；固定构建与测试依赖版本。`check` 包含模块边界、�
 
 ## 部署
 
-主要支持 Workers + Wrangler，绑定 `KV`，通过 Secrets 配置 `ADMIN`、`KEY`、`UUID`。先准备独立 staging 资源，再发布测试环境。不要直接套用历史 Pages 上传教程。
+push `main` 即由 `.github/workflows/deploy.yml` 自动校验并部署到生产 Worker（服务名 `edgetunnel`，由 [wrangler.toml](wrangler.toml) 的 `name`/`account_id` 唯一定义）；也可用 `npm run deploy` 本地手动发布。绑定 `KV`，通过 Secrets 配置 `ADMIN`、`KEY`、`UUID`。仓库不预置 staging 环境，需要隔离验证时按部署指南自建。不要直接套用历史 Pages 上传教程。
 
-完整步骤、环境隔离、验收及回退见 [Cloudflare 部署指南](docs/CF-DEPLOYMENT.md)。
+完整步骤、CI 链路、环境隔离、验收及回退见 [Cloudflare 部署指南](docs/CF-DEPLOYMENT.md)。
 
 ## 当前行为
 

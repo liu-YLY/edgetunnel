@@ -47,6 +47,9 @@ jobs:
       - run: npm ci
       # 防漂移：校验构建产物与仓库内 _worker.js 逐字节一致 + 全部测试
       - run: npm run check
+      # build.yml 只跑 PR；push main 的完整门禁在这里补齐（workerd 运行时集成 + 打包 dry-run）
+      - run: npm run test:runtime
+      - run: npm run deploy:check
 
       - name: Set Workers secrets (self-healing)
         if: env.CLOUDFLARE_API_TOKEN != ''

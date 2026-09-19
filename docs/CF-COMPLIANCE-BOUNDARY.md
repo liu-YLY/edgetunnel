@@ -112,12 +112,12 @@ Workers 运行在 CF 自己的网络里，以下信号**全部平台可见**（�
 
 | # | 风险 | 现状 | 缓解 |
 |---|---|---|---|
-| 1 | **KEY 未设置**：订阅 TOKEN 由 `MD5(ADMIN+默认密钥)` 派生，默认密钥公开于源码 → 订阅地址可被枚举盗用 | 未修复（P0） | `wrangler secret put KEY` 设置强随机值；副作用：TOKEN 变更需重新订阅 |
-| 2 | **ADMIN/UUID 明文 binding** | 未修复（P0） | 迁移 `secret_text` |
-| 3 | **登录接口无限速**：`/login` POST 可被爆破（密码 `@Test_3950358` 强度尚可但非长期方案） | 未修复（P1） | 面板登录加失败计数 + KV 限速（后续版本） |
+| 1 | ~~**KEY 未设置**：订阅 TOKEN 由 `MD5(ADMIN+默认密钥)` 派生，默认密钥公开于源码 → 订阅地址可被枚举盗用~~ | **已修复**（2026-09-19 核实） | 线上 `KEY` 为 `secret_text` 自定义值（面板掩码 `66d…67`），已非源码中的默认密钥串；且 `UUID` 由 env 直接提供，不再依赖 `MD5(ADMIN+KEY)` 派生 |
+| 2 | ~~**ADMIN/UUID 明文 binding**~~ | **已修复**（2026-09-19 核实） | 经 Cloudflare settings API 实测：`ADMIN`、`KEY`、`UUID` 均为 `secret_text`；`OFF_LOG` 为 plain_text 变量（非凭据） |
+| 3 | **登录接口无限速**：`/login` POST 可被爆破 | **已缓解**（2026-09-19 核实） | `/login` POST 已有每 isolate 5 次/分钟限流（`允许登录`，超限返回 429）；需要全局强一致时可绑定 `LOGIN_RATE_LIMITER` |
 | 4 | KV 中可能存储 CF API 凭据（cf.json，若配置用量查询） | 当前未配置，风险休眠 | 启用 UsageAPI 时凭据只放 secret，不放 KV 明文 |
-| 5 | 日志记录访问者 IP/UA（log.json） | OFF_LOG=1 已关应用日志 | 若开启需注意日志中含第三方隐私，勿外泄 KV 导出 |
-| 6 | 订阅链接本身即凭据（TOKEN=密码） | 依赖 TOKEN 保密 | 绝不在公开场合粘贴订阅 URL；泄露即换 KEY 轮换 |
+| 5 | 日志记录访问者 IP/UA（log.json） | **已清理**（2026-09-19） | 已停写并删除 KV `log.json`（含历史 IP/ASN）；`OFF_LOG=true`，结构化 access 事件只进 Workers Logs |
+| 6 | 订阅链接本身即凭据（TOKEN=密码） | 依赖 TOKEN 保密 | 绝不在公开场合粘贴订阅 URL；泄露后轮换 `UUID`（订阅 TOKEN 与节点链接随之变更，需重新分发） |
 | 7 | TG Bot Token / CF Global API Key（若配置） | 未配置 | 配置时一律走 secret_text |
 
 ---

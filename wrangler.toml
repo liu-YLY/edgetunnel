@@ -19,14 +19,9 @@ invocation_logs = false # 自动 invocation URL 可能包含订阅 token；使�
 binding = "KV"
 id = "8f6efb8eac6741ba9ace4353946555ac"
 
-# staging 不继承生产 KV/Secrets；首次发布前填写独立 namespace id。
-[env.staging]
-name = "edgetunnel-staging"
-workers_dev = true
-
-[[env.staging.kv_namespaces]]
-binding = "KV"
-# 本地 dev 可使用 binding；远程 staging 发布前必须创建并填写独立 id。
-
 # 可选：部署前按 Cloudflare 文档添加 LOGIN_RATE_LIMITER 绑定。
 # 未绑定时提供每 isolate 5 次/分钟的本地防护，不声称全局限流。
+#
+# 本仓库不预置 staging 环境（2026-09-19 移除）：原先的 [env.staging] 缺少独立 KV
+# namespace id、线上也从未创建过 edgetunnel-staging，属于"文档写了但用不了"的半成品。
+# 需要隔离验证时按 docs/CF-DEPLOYMENT.md 的步骤显式创建，勿复用生产 KV。
