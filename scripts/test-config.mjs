@@ -47,10 +47,11 @@ import nodeCrypto from 'node:crypto';
   assert.strictEqual(cfg.KV可用, false, '无 KV 绑定');
   assert.strictEqual(cfg.伪装页URL, 'nginx', '伪装页默认 nginx');
   assert.strictEqual(cfg.运行配置.调试日志打印, true, 'DEBUG 属于返回的请求配置');
+  assert.strictEqual(cfg.运行配置.连接超时毫秒, 1000, 'CONNECT_TIMEOUT_MS 默认 1000');
 
   // 场景 2：配 HOST + PROXYIP + UUID + KV stub + URL 伪装页
   const kvStub = { get: async () => null, put: async () => {}, delete: async () => {} };
-  cfg = await run({ ADMIN: 'a', KEY: 'k', HOST: 'a.example.com,b.example.com', PROXYIP: '1.2.3.4:443', UUID: '11111111-1111-4111-8111-111111111111', URL: 'http://fake.example.com/extra/', KV: kvStub }, { colo: 'HKG' }, 'via.host.dev');
+  cfg = await run({ ADMIN: 'a', KEY: 'k', HOST: 'a.example.com,b.example.com', PROXYIP: '1.2.3.4:443', UUID: '11111111-1111-4111-8111-111111111111', URL: 'http://fake.example.com/extra/', KV: kvStub, CONNECT_TIMEOUT_MS: '2500' }, { colo: 'HKG' }, 'via.host.dev');
   assert.ok(Array.isArray(cfg.hosts) && cfg.hosts.length === 2, 'HOST 解析为数组');
   assert.strictEqual(cfg.host, 'a.example.com', 'host 取 HOST 首项');
   assert.strictEqual(cfg.默认反代IP, '1.2.3.4:443', 'PROXYIP 优先');
@@ -59,6 +60,11 @@ import nodeCrypto from 'node:crypto';
   assert.strictEqual(cfg.envUUID, '11111111-1111-4111-8111-111111111111', 'UUID env 透传');
   assert.strictEqual(cfg.KV可用, true, 'KV 绑定可识别');
   assert.strictEqual(cfg.伪装页URL, 'https://fake.example.com', '伪装页规范化（强制 https + 去路径）');
+  assert.strictEqual(cfg.运行配置.连接超时毫秒, 2500, 'CONNECT_TIMEOUT_MS 生效');
+  // clamp：越界/非法值回退到边界或默认
+  assert.strictEqual((await run({ ADMIN: 'a', KEY: 'k', CONNECT_TIMEOUT_MS: '99999' }, {}, 'clamp.example.com')).运行配置.连接超时毫秒, 5000, 'CONNECT_TIMEOUT_MS 上限 5000');
+  assert.strictEqual((await run({ ADMIN: 'a', KEY: 'k', CONNECT_TIMEOUT_MS: '1' }, {}, 'clamp.example.com')).运行配置.连接超时毫秒, 500, 'CONNECT_TIMEOUT_MS 下限 500');
+  assert.strictEqual((await run({ ADMIN: 'a', KEY: 'k', CONNECT_TIMEOUT_MS: 'abc' }, {}, 'clamp.example.com')).运行配置.连接超时毫秒, 1000, 'CONNECT_TIMEOUT_MS 非法值回退默认');
 
   console.log('[test] 场景1 基础 env / 场景2 全量 env');
 

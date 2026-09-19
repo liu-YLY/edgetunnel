@@ -10,7 +10,7 @@ import { closeSocketQuietly, 开始TCP连接世代 } from './lifecycle.js';
 import { sstpConnect, turnConnect } from './proxy.js';
 import { 提取木马反代握手数据, 连接木马反代 } from './trojan-relay.js';
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, yourUUID, request = null, 反代上下文 = {}, 允许木马反代 = false, 木马反代首包数据 = null, 仅建立连接 = false) {
-	const { TCP并发拨号数, 反代并发拨号数, 预加载竞速拨号, SOCKS5白名单 } = 当前请求配置();
+	const { TCP并发拨号数, 反代并发拨号数, 预加载竞速拨号, SOCKS5白名单, 连接超时毫秒 = 1000 } = 当前请求配置() || {};
 	const ctx反代IP = 反代上下文.反代IP || '';
 	const ctx代理类型 = 反代上下文.代理类型 !== undefined ? 反代上下文.代理类型 : null;
 	const ctx代理全局 = 反代上下文.代理全局 !== undefined ? 反代上下文.代理全局 : false;
@@ -18,8 +18,9 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	const ctx反代兜底 = 反代上下文.反代兜底 !== undefined ? 反代上下文.反代兜底 : true;
 	let 反代数组索引 = 0;
 	log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${ctx反代IP} | 反代兜底: ${ctx反代兜底 ? '是' : '否'} | 反代类型: ${ctx代理类型 || 'proxyip'} | 全局: ${ctx代理全局 ? '是' : '否'}`);
-	const 连接超时毫秒 = 1000;
 	let 已通过代理发送首包 = false;
+	// connect 超时来自请求级 运行配置（env CONNECT_TIMEOUT_MS，默认 1000ms，clamp 500–5000），
+	// 与 连接超时毫秒 destructure（第 13 行）配套；缺失时回退默认 1000，保持历史行为。
 	const TCP连接 = 创建请求TCP连接器(request);
 	const 使用木马反代 = 允许木马反代 && (反代上下文.木马反代地址 || null);
 	const 木马反代目标 = 使用木马反代 ? 反代上下文.木马反代地址 : null;

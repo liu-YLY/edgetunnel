@@ -35,6 +35,7 @@ npm run deploy:check
 ## 行为变化与迁移
 
 - 出站使用 `cloudflare:sockets`；auto 仅连接原始目标，不再尝试内置 CF IP。平台不支持的目标将失败；需要受控的可达代理出口时显式配置 PROXYIP/SOCKS/HTTP/HTTPS。region 仍是显式启用的旧外部依赖。
+- 出站 TCP connect 超时默认 1000ms；慢目标场景可用 env `CONNECT_TIMEOUT_MS`（500–5000ms）调整，非法值回退默认。该设置作用于直连与竞速拨号的所有候选连接。
 - 所有 HTTPS 代理统一使用原生 TLS；不再绕过证书校验。IP 代理证书不匹配时应改用证书匹配的域名，不能通过关闭验证恢复。
 - 管理会话改为 HMAC-SHA256 签名、24 小时服务端过期，并绑定 host/UA。旧 Cookie 失效，需重新登录；订阅 UUID/token 派生规则未改。
 - `/admin` 默认本地 JSON 配置页面。`REMOTE_ADMIN=true` 才使用旧远程面板，该面板不是本仓库可控资源；新接口变化可能需要同步适配。

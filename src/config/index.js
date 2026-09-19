@@ -304,6 +304,7 @@ async function 全局读取配置(env, request, url) {
         反代并发拨号数: 限制拨号数(env.PROXY_CONCURRENT_DIAL, 1),
         TCP并发拨号数: 限制拨号数(env.TCP_CONCURRENT_DIAL, 识别运营商(request) === 'cmcc' ? 1 : 2),
         SOCKS5白名单: Object.freeze([...new Set([...默认SOCKS5白名单, ...(env.GO2SOCKS5 ? await 整理成数组(env.GO2SOCKS5) : [])])]),
+        连接超时毫秒: 限制连接超时(env.CONNECT_TIMEOUT_MS),
     });
 	// ============ M2-P0 出站模式三层选择 ============
 	// auto（默认）：原始目标直连，不再生成第三方 {colo}.SsSs.nEt 反代域名，运行时零外部依赖；
@@ -350,5 +351,13 @@ function 深合并配置(目标, 来源) {
 
 
 function 限制拨号数(value, fallback) { const n = Number(value); return Number.isFinite(n) && n > 0 ? Math.min(3, Math.max(1, Math.floor(n))) : fallback; }
+
+// M2-P2 后续：出站 connect 超时参数化。默认 1000ms（历史行为），允许 500–5000ms 覆盖慢目标场景。
+// 非法值一律回退默认，避免误配导致任意大超时或立即超时。
+function 限制连接超时(value) {
+	if (value === undefined || value === null || value === '') return 1000;
+	const n = Number(value);
+	return Number.isFinite(n) ? Math.min(5000, Math.max(500, Math.floor(n))) : 1000;
+}
 
 export { 全局读取配置, 读取config_JSON };

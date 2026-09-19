@@ -965,7 +965,8 @@ async function 全局读取配置(env, request, url) {
     预加载竞速拨号: ["1", "true"].includes(env.PRELOAD_RACE_DIAL),
     反代并发拨号数: 限制拨号数(env.PROXY_CONCURRENT_DIAL, 1),
     TCP并发拨号数: 限制拨号数(env.TCP_CONCURRENT_DIAL, 识别运营商(request) === "cmcc" ? 1 : 2),
-    SOCKS5白名单: Object.freeze([.../* @__PURE__ */ new Set([...默认SOCKS5白名单, ...env.GO2SOCKS5 ? await 整理成数组(env.GO2SOCKS5) : []])])
+    SOCKS5白名单: Object.freeze([.../* @__PURE__ */ new Set([...默认SOCKS5白名单, ...env.GO2SOCKS5 ? await 整理成数组(env.GO2SOCKS5) : []])]),
+    连接超时毫秒: 限制连接超时(env.CONNECT_TIMEOUT_MS)
   });
   let 出站模式 = "auto", 默认反代IP = "", 默认反代兜底 = true;
   const env出站模式 = String(env.出站模式 || env.EGRESS_MODE || "").toLowerCase();
@@ -1009,6 +1010,11 @@ function 深合并配置(目标, 来源) {
 function 限制拨号数(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.min(3, Math.max(1, Math.floor(n))) : fallback;
+}
+function 限制连接超时(value) {
+  if (value === void 0 || value === null || value === "") return 1e3;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(5e3, Math.max(500, Math.floor(n))) : 1e3;
 }
 
 // src/config/store.js
@@ -3066,7 +3072,7 @@ async function 转发木马UDP反代数据(chunk, webSocket, 上下文, request)
 
 // src/transport/forward.js
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, yourUUID, request = null, 反代上下文 = {}, 允许木马反代 = false, 木马反代首包数据 = null, 仅建立连接 = false) {
-  const { TCP并发拨号数, 反代并发拨号数, 预加载竞速拨号, SOCKS5白名单 } = 当前请求配置();
+  const { TCP并发拨号数, 反代并发拨号数, 预加载竞速拨号, SOCKS5白名单, 连接超时毫秒 = 1e3 } = 当前请求配置() || {};
   const ctx反代IP = 反代上下文.反代IP || "";
   const ctx代理类型 = 反代上下文.代理类型 !== void 0 ? 反代上下文.代理类型 : null;
   const ctx代理全局 = 反代上下文.代理全局 !== void 0 ? 反代上下文.代理全局 : false;
@@ -3074,7 +3080,6 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
   const ctx反代兜底 = 反代上下文.反代兜底 !== void 0 ? 反代上下文.反代兜底 : true;
   let 反代数组索引 = 0;
   log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${ctx反代IP} | 反代兜底: ${ctx反代兜底 ? "是" : "否"} | 反代类型: ${ctx代理类型 || "proxyip"} | 全局: ${ctx代理全局 ? "是" : "否"}`);
-  const 连接超时毫秒 = 1e3;
   let 已通过代理发送首包 = false;
   const TCP连接 = 创建请求TCP连接器(request);
   const 使用木马反代 = 允许木马反代 && (反代上下文.木马反代地址 || null);
