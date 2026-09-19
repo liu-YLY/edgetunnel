@@ -751,7 +751,8 @@ git commit -m "feat(admin): 命令面板（⌘/Ctrl+K，含全部内置动作与
 ### Task 5: 配置编辑器增强（内联校验 / diff 预览 / 草稿 / 撤销重做）
 
 **Files:**
-- Modify: `src/admin/ui/index.js`（`配置Tab` 外层加校验区与 diff 浮层）
+- Modify: `src/admin/ui/index.js`（新增并注入 `差异浮层()`）
+- Modify: `src/admin/ui/tabs/config.js`（在 JSON 卡片的 `<textarea id="cfg">` 之后插入 `<div id="cfg-check" role="status" aria-live="polite"></div>`）
 - Modify: `src/admin/ui/client.js`
 - Test: `scripts/test-ui.mjs`
 
@@ -917,6 +918,8 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
 
 **Files:**
 - Modify: `src/admin/ui/client.js`
+- Modify: `src/admin/ui/tabs/overview.js`（趋势图卡片容器加 `data-skeleton` + 骨架条）
+- Modify: `src/admin/ui/tabs/ops.js`（`#diag` 上方加 `data-skeleton` + 骨架条）
 - Test: `scripts/test-ui.mjs`
 
 - [ ] **Step 1: 加断言**
