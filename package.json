@@ -5,6 +5,7 @@
     "build": "node build.js --force --out _worker.js",
     "test": "node scripts/test-modules.cjs && node --import ./scripts/register-test-loader.mjs scripts/test-config.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-subscribe.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-regression.mjs",
     "test:runtime": "node scripts/test-runtime.cjs",
+    "test:proto": "node scripts/test-grpc-xhttp.cjs",
     "check": "node scripts/verify.js && npm test",
     "dev": "wrangler dev --env staging",
     "deploy:check": "wrangler deploy --env \"\" --dry-run --outdir dist",
