@@ -178,6 +178,7 @@ function 管理面板HTML(env, config_JSON) {
       <button type="button" class="btn ghost" id="btn-copy-sub">复制通用订阅</button>
       <button type="button" class="btn ghost" id="btn-copy-clash">复制 Clash 原生</button>
       <button type="button" class="btn ghost" id="btn-copy-singbox">复制 sing-box 原生</button>
+      <button type="button" class="btn ghost" id="btn-open-qr">查看二维码</button>
     </div>
     <div class="qr" id="qr" aria-label="节点二维码"></div>
   </div>
@@ -190,6 +191,13 @@ function 管理面板HTML(env, config_JSON) {
     <h2>客户端格式</h2>
     <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
     <div class="row" id="fmt-links"></div>
+  </div>
+  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
+    <div class="box">
+      <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
+      <div id="qr-big"></div>
+      <div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div>
+    </div>
   </div>
 </section>
 
@@ -354,9 +362,12 @@ function 管理面板HTML(env, config_JSON) {
   function loadNodes() {
     $('#nlink-code').textContent = S.link || '';
     $('#sub-link').textContent = 'https://' + S.host + '/sub?token=' + S.token;
-    var qr = $('#qr');
-    try { qr.innerHTML = window.QRCode.generateSVG(S.link || 'no-link'); qr.style.display = ''; }
-    catch (e) { qr.innerHTML = '<p class="dim">二维码生成失败：' + e.message + '</p>'; }
+    var qr = $('#qr'), big = $('#qr-big');
+    try {
+      qr.innerHTML = window.QRCode.generateSVG(S.link || 'no-link');
+      qr.onclick = openQR; qr.style.cursor = 'pointer'; qr.title = '点击放大';
+      if (big) big.innerHTML = window.QRCode.generateSVG(S.link || 'no-link', 4);
+    } catch (e) { qr.innerHTML = '<p class="dim">二维码生成失败：' + e.message + '</p>'; }
     var fmts = [['clash', 'Clash'], ['singbox', 'sing-box'], ['surge', 'Surge'], ['loon', 'Loon'], ['quanx', 'Quantumult X'], ['v2rayn', 'v2rayN'], ['shadowrocket', 'Shadowrocket']];
     $('#fmt-links').innerHTML = fmts.map(function (f) {
       return '<button type="button" class="btn ghost" data-fmt="' + f[0] + '">' + f[1] + '</button>';
@@ -365,6 +376,32 @@ function 管理面板HTML(env, config_JSON) {
       b.addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=' + b.dataset.fmt); });
     });
   }
+  function openQR() { var m = $('#qr-modal'); if (m) m.classList.add('open'); }
+  function closeQR() { var m = $('#qr-modal'); if (m) m.classList.remove('open'); }
+  var _qrClose = document.getElementById('btn-qr-close');
+  if (_qrClose) _qrClose.addEventListener('click', closeQR);
+  var _qrModal = document.getElementById('qr-modal');
+  if (_qrModal) _qrModal.addEventListener('click', function (e) { if (e.target === this) closeQR(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQR(); });
+  var _btnDl = document.getElementById('btn-qr-download');
+  if (_btnDl) _btnDl.addEventListener('click', function () {
+    var svg = document.querySelector('#qr-big svg');
+    if (!svg) { toast('二维码未生成', false); return; }
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = Math.max(img.width || 180, 180) * 4; c.height = Math.max(img.height || 180, 180) * 4;
+      var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(img, 0, 0, c.width, c.height);
+      try {
+        var a = document.createElement('a'); a.download = 'edgetunnel-qr.png'; a.href = c.toDataURL('image/png');
+        document.body.appendChild(a); a.click(); a.remove(); toast('二维码已下载', true);
+      } catch (e2) { toast('下载失败：' + e2.message, false); }
+    };
+    img.onerror = function () { toast('二维码渲染失败', false); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  });
+  $('#btn-open-qr').addEventListener('click', openQR);
   $('#btn-copy-link').addEventListener('click', function () { copy(S.link || ''); });
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
