@@ -1,10 +1,11 @@
 // 管理面板渲染入口：拼装 head（主题/样式）+ shell + 各 Tab + 客户端脚本。
 // 依赖 core/html.js（转义、掩码）、admin/qr.js（二维码运行时）、
-// 同目录 theme/styles/client 与 tabs/*。
+// 同目录 theme/styles/icons/client 与 tabs/*。
 import { 掩码敏感信息, 转义HTML } from '../../core/html.js';
 import { 二维码运行时 } from '../qr.js';
 import { 主题CSS, 动效CSS } from './theme.js';
 import { 样式CSS } from './styles.js';
+import { 图标 } from './icons.js';
 import { 客户端脚本 } from './client.js';
 import { 概览Tab } from './tabs/overview.js';
 import { 节点Tab } from './tabs/nodes.js';
@@ -138,17 +139,31 @@ function 差异浮层() {
 function 页头(sse) {
   return `<header>
   <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
-  <div class="row"><button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色">◐ 主题</button><button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">≋ 动效</button><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
+  <div class="row">
+    <button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色主题">${图标('theme')}主题</button>
+    <button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">${图标('motion')}动效</button>
+    <button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">${图标('refresh')}刷新</button>
+    <a class="lnk" href="#top">${图标('up')}置顶</a>
+    <a class="lnk" href="/logout">${图标('logout')}退出登录</a>
+  </div>
 </header>`;
 }
 
+// 导航项：[data-tab, 完整名, 移动端短名, 图标名]。
+// 可访问名称用 aria-label 固定为完整名：移动端只显示短名，若靠可见文本命名，
+// 桌面端会把「完整名+短名」拼成一个名字读出来。
+const 导航项 = [
+  ['overview', '概览', '概览', 'gauge'],
+  ['nodes', '节点与订阅', '节点', 'link'],
+  ['check', '自检', '自检', 'shield'],
+  ['config', '配置', '配置', 'sliders'],
+  ['ops', '运维', '运维', 'tool'],
+];
+
 function 主导航() {
+  const 按钮 = 导航项.map(([键, 全, 短, 图], i) => `<button type="button"${i === 0 ? ' class="on"' : ''} role="tab" aria-selected="${i === 0}" aria-controls="page-${键}" aria-label="${全}" data-tab="${键}">${图标(图)}<span class="lb">${全}</span><span class="ls">${短}</span></button>`);
   return `<nav role="tablist" aria-label="面板分区">
-  <button type="button" class="on" role="tab" aria-selected="true" aria-controls="page-overview" data-tab="overview">概览</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="page-nodes" data-tab="nodes">节点与订阅</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="page-check" data-tab="check">自检</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="page-config" data-tab="config">配置</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="page-ops" data-tab="ops">运维</button>
+  ${按钮.join('\n  ')}
 </nav>`;
 }
 

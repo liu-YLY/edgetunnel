@@ -2,8 +2,25 @@
 // 零 import；只导出返回 CSS 文本的函数。
 
 // 深色为默认（:root），浅色通过 [data-theme="light"] 覆盖同名变量。
-const 令牌 = `:root{--bg1:#060a12;--bg2:#0a1120;--bg3:#070c16;--grid:rgba(120,170,255,.055);--surf:rgba(18,28,46,.78);--line:rgba(120,170,255,.22);--fg:#dce7f5;--mut:#7d90ad;--acc:#4da3ff;--acc2:#35e0d8;--ok:#5ce6a0;--warn:#f2c14e;--err:#ff8a80;--cut:10px;--r:12px;--shadow:0 10px 28px rgba(0,0,0,.38)}
-:root[data-theme="light"]{--bg1:#f6f9fd;--bg2:#e9eef7;--bg3:#f2f6fc;--grid:rgba(30,60,110,.05);--surf:rgba(255,255,255,.86);--line:rgba(30,60,110,.2);--fg:#16233a;--mut:#5b6b85;--acc:#2f6fe4;--acc2:#0f9e93;--ok:#0f8a5f;--warn:#a06a00;--err:#c0392b;--shadow:0 10px 24px rgba(20,40,80,.12)}`;
+//
+// 视觉语言（克制工程风）：圆角卡面 + 1px 描边 + 柔和阴影；不再使用切角（clip-path）
+// 与 L 形角标——那类几何在实机上只呈现为"缺角 + 碎块"，浅色主题里更像渲染错误。
+// 身份改由深空配色、青蓝强调色、等宽数字与极轻的渐变点缀承担。
+//
+// 表面层级：--surf（卡面）/ --sunken（凹槽：输入框、代码块、导航轨道）/ --raised（浮层）。
+// 浅色主题的 --surf 用纯白而非半透明——半透明白压在近白底上会让卡片边界消失。
+//
+// 对比度：浅色主题的 --acc2/--ok/--warn 都刻意压深到 4.5:1 以上
+// （原 #0f9e93 约 3.4:1、#0f8a5f 约 4.35:1、#a06a00 约 4.6:1 已在边缘）。
+// --btnfg 是强调色渐变（--acc2→--acc）上的前景色，必须随主题切换：浅色主题的强调色
+// 压深后，深色文字压在其上只剩约 3.8:1。
+//
+// 字号与间距不设令牌：面板只有一套密度（无 compact/comfortable 切换），令牌化只会
+// 增加间接层而不产生可变点。冻结的取值：
+//   字号 11（hint/徽章）/12（标签、辅助）/13（正文）/14（基准）/17（H1）/26（大数值）
+//   间距 4 的倍数：4/6/8/10/12/14/16/18/24
+const 令牌 = `:root{color-scheme:dark;--bg1:#070b12;--bg2:#0b1220;--surf:#101828;--sunken:#0a101d;--raised:#151d30;--line:rgba(140,175,230,.16);--fg:#e6edf8;--mut:#8b9bb4;--acc:#5ea6ff;--acc2:#2fd4c8;--ok:#5ce6a0;--warn:#f2c14e;--err:#ff8a80;--btnfg:#06121f;--shadow:0 1px 2px rgba(0,0,0,.32),0 8px 24px rgba(0,0,0,.26);--shadow-lg:0 24px 64px rgba(0,0,0,.5)}
+:root[data-theme="light"]{color-scheme:light;--bg1:#f7f9fc;--bg2:#eef2f8;--surf:#ffffff;--sunken:#f3f6fa;--raised:#ffffff;--line:rgba(16,36,72,.14);--fg:#111c2e;--mut:#5a6a83;--acc:#2563eb;--acc2:#0d7a72;--ok:#0b7a52;--warn:#96650a;--err:#c0392b;--btnfg:#ffffff;--shadow:0 1px 2px rgba(16,36,72,.06),0 8px 22px rgba(16,36,72,.07);--shadow-lg:0 20px 48px rgba(16,36,72,.18)}`;
 
 // 动效三档：full 保留入场与图表动画；lite 只留状态反馈；off 全关。
 // prefers-reduced-motion 优先级最高，一律按 off 处理。

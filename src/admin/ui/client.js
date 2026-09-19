@@ -375,22 +375,6 @@ const 客户端脚本 = `
   }
   setInterval(tickClock, 1000);
 
-  // 概览增强：状态徽章（Task2，textContent 防 XSS）
-  function renderBadges() {
-    var box = $('#badges'); if (!box) return;
-    var rows = [
-      ['协议类型', S.协议类型], ['传输协议', S.传输协议], ['gRPC模式', S.gRPC模式], ['Fingerprint', S.Fingerprint],
-      ['出站', S.出站], ['反代', S.反代], ['ECH', S.ECH ? '开' : '关'], ['启用0RTT', S.启用0RTT ? '开' : '关']
-    ];
-    box.innerHTML = '';
-    rows.forEach(function (p) {
-      var b = document.createElement('span');
-      b.className = 'badge';
-      b.textContent = p[0] + ': ' + (p[1] === undefined ? '' : p[1]);
-      box.appendChild(b);
-    });
-  }
-
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
   function switchTab(btn) {
@@ -412,26 +396,35 @@ const 客户端脚本 = `
 
   // 用量显示：区分「实时查询成功」「仅有历史快照」「无数据」三态，
   // 避免把"查不到"渲染成 "0 / 100,000 0.0%" 这种看似正常的假数据。
+  // 输出分两处：环内只放百分比（跟随环的周长进度），绝对量放右侧大数字。
   function 渲染用量(use, rows) {
-    var c = $('#ubar-fill'), t = $('#utext'), note = $('#usage-note');
+    var c = $('#ubar-fill'), t = $('#utext'), v = $('#uval'), note = $('#usage-note');
     var max = Number(use.max) > 0 ? Number(use.max) : 100000;
+    // 环的进度用 stroke-dashoffset 表达，周长从标记里读，避免半径一改就静默失配
+    function 画环(当前, 总量) {
+      var 周长 = (c && Number(c.getAttribute('stroke-dasharray'))) || 327;
+      var 比例 = 总量 > 0 ? Math.min(1, 当前 / 总量) : 0;
+      if (c) c.setAttribute('stroke-dashoffset', String(周长 - 周长 * 比例));
+      if (t) t.textContent = (比例 * 100).toFixed(2) + '%';
+    }
     if (use.success) {
       var total = Number(use.total) || 0;
-      if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, total / max)));
-      if (t) t.textContent = fmt(total) + ' / ' + fmt(max) + ' ' + ((total / max) * 100).toFixed(2) + '%';
+      画环(total, max);
+      if (v) v.textContent = fmt(total) + ' / ' + fmt(max);
       if (note) note.textContent = '今日 UTC 00:00 至今：Workers ' + fmt(use.workers || 0) + ' + Pages ' + fmt(use.pages || 0) + ' · 比例按免费额度 ' + fmt(max) + '/天计';
       return;
     }
     var last = rows && rows.length ? rows[rows.length - 1] : null;
     if (last && last.total != null) {
       var lmax = Number(last.max) > 0 ? Number(last.max) : max, ltotal = Number(last.total) || 0;
-      if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, ltotal / lmax)));
-      if (t) t.textContent = fmt(ltotal) + ' / ' + fmt(lmax) + '（快照）';
+      画环(ltotal, lmax);
+      if (v) v.textContent = fmt(ltotal) + ' / ' + fmt(lmax) + '（快照）';
       if (note) note.textContent = '实时查询不可用' + (use.msg ? '（' + use.msg + '）' : '') + '，当前显示最近快照 ' + (last.date || '') + '。在运维页填写凭据后点「立即刷新用量」可获取实时值。';
       return;
     }
-    if (c) c.setAttribute('stroke-dashoffset', '314');
+    if (c) c.setAttribute('stroke-dashoffset', c.getAttribute('stroke-dasharray') || '327');
     if (t) t.textContent = '—';
+    if (v) v.textContent = '—';
     if (note) note.textContent = '暂无用量数据' + (use.msg ? '：' + use.msg : '') + '。请在运维页填写 APIToken 或 Email + GlobalAPIKey 后点「立即刷新用量」。';
   }
 
@@ -446,14 +439,19 @@ const 客户端脚本 = `
       骨架完毕('#chart');
       var box = $('#chart'); if (!box) return;
       if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（每次刷新用量后写入当日一条）</p>'; return; }
-      var W = 640, H = 180, pad = 24;
+      // viewBox 宽度跟随容器实际像素宽：写死 640 会在宽屏上被等比放大成"柱子高得离谱"，
+      // 且柱子被拉伸后 rx 与描边一起变形。按 1px≈1 用户单位渲染，高度固定在 150。
+      var W = Math.max(320, Math.round(box.clientWidth || 640)), H = 150, pad = 26;
       var maxV = rows.reduce(function (m, r) { return Math.max(m, r.total || 0); }, 1);
       var bw = (W - pad * 2) / rows.length, bars = '', ticks = '';
+      // 刻度：只有柱子没有量级参照时读者无法判断高低，补基线与峰值刻度
+      bars += '<line class="g-base" x1="' + pad + '" y1="' + (H - pad) + '" x2="' + (W - pad) + '" y2="' + (H - pad) + '"/>';
+      ticks += '<text x="' + pad + '" y="' + (pad - 10) + '">峰值 ' + fmt(maxV) + '</text>';
       rows.forEach(function (r, i) {
         var h = Math.max(2, ((r.total || 0) / maxV) * (H - pad * 2));
         var x = pad + i * bw, y = H - pad - h;
-        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
-        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
+        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="3" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
+        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="10" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
       bindBarTips(box.querySelector('svg'));
@@ -946,7 +944,7 @@ const 客户端脚本 = `
   $('#btn-refresh-top').addEventListener('click', function () { loadNodes(); loadDiag(); 刷新用量(false); });
   loadDiag();
 
-  renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
+  loadOverview(); loadNodes(); loadConfig(); loadOps();
 })();
 `;
 

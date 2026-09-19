@@ -1,4 +1,5 @@
 import { 管理面板HTML } from '../src/admin/ui/index.js';
+import { 登录页面 } from '../src/admin/pages.js';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
@@ -27,8 +28,8 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含主题标记 ${标记}`);
   }
 
-  // 1.2) 概览增强元素标记（Task2：时钟 / 徽章 / 趋势 tooltip）
-  for (const id of ['id="clock"', 'id="clock-local"', 'id="clock-utc"', 'id="badges"', 'id="chart-tip"']) {
+  // 1.2) 概览增强元素标记（Task2：时钟 / 用量大数字 / 趋势 tooltip）
+  for (const id of ['id="clock"', 'id="clock-local"', 'id="clock-utc"', 'id="uval"', 'id="chart-tip"']) {
     assert.ok(html.includes(id), `HTML 应包含概览增强元素 ${id}`);
   }
 
@@ -52,10 +53,16 @@ import assert from 'node:assert/strict';
   }
 
   // 1.6) 用量卡说明 + SVG 走主题变量（硬编码浅色会让浅色主题下的数值不可见）
-  for (const 标记 of ['id="usage-note"', '.g-text', '.g-fill', '.g-track', '#chart rect{fill:var(--acc)}']) {
+  for (const 标记 of ['id="usage-note"', '.g-text', '.g-fill', '.g-track', '.g-base', '#chart rect{fill:var(--acc)}']) {
     assert.ok(html.includes(标记), `HTML/样式应包含 ${标记}`);
   }
   assert.ok(!html.includes('#e6e8ee'), 'SVG 不应再硬编码浅色文字（浅色主题下不可见）');
+  // 用量环：半径/周长改过就必须同步 JS 里的进度算法，故断言 JS 从元素读周长而不是写死数字
+  const 环周长 = Number((html.match(/id="ubar-fill"[^>]*stroke-dasharray="(\d+)"/) || [])[1]);
+  assert.ok(环周长 > 300, `用量环应有显式周长，实际 ${环周长}`);
+  assert.ok(html.includes("c.getAttribute('stroke-dasharray')"), '进度算法应从元素读取周长，避免与标记失配');
+  // 趋势图 viewBox 宽度须按容器实测宽度生成，写死会在宽屏被等比放大成"柱子高得离谱"
+  assert.ok(html.includes('box.clientWidth'), '趋势图 viewBox 宽度应跟随容器实测宽度');
 
   // 1.7) 生效值展示：运行时值必须覆盖 env 原始值推导。
   // 背景：DEBUG 等开关实际按 ['1','true'] 解析（env='false' 曾显示成"开启"）；
@@ -84,6 +91,15 @@ import assert from 'node:assert/strict';
   for (const 标记 of ['id="cfg-ln"', 'id="cfg-hl"', 'id="cfg-pos"', 'id="cfg-state"', '.cfg-editor textarea', '.tk-key', '.tk-str', '.tk-num', '@keyframes pop-in', 'id="cfg"']) {
     assert.ok(html.includes(标记), `HTML/样式应包含编辑器组件 ${标记}`);
   }
+  // 行号栏必须 white-space:pre：默认 normal 会把 "1\n2\n3…" 折叠成一行再自动换行，
+  // 45 个行号糊成一团数字，行号列等于失效。
+  assert.ok(/\.cfg-editor \.cfg-ln\{[^}]*white-space:pre/.test(html), '行号栏须 white-space:pre，否则行号会被折叠换行');
+  // 三层（行号 / 高亮 / textarea）的左边界必须严格衔接，错 1px 就会逐行漂移
+  const 行号宽 = Number((html.match(/\.cfg-editor \.cfg-ln\{[^}]*width:(\d+)px/) || [])[1]);
+  const 高亮左 = Number((html.match(/\.cfg-editor pre\{[^}]*left:(\d+)px/) || [])[1]);
+  const 编辑左 = Number((html.match(/\.cfg-editor textarea\{[^}]*padding-left:(\d+)px/) || [])[1]);
+  assert.equal(高亮左, 行号宽 + 1, `高亮层 left(${高亮左}px) 应等于行号宽+1px 边框(${行号宽 + 1}px)`);
+  assert.equal(编辑左, 高亮左 + 11, `textarea 左内边距(${编辑左}px) 应与高亮层文字起点一致(${高亮左 + 11}px)`);
   // textarea 须 wrap=off 才能与不换行的 <pre> 高亮层逐像素对齐
   assert.ok(html.includes('<textarea id="cfg" rows="14" wrap="off"'), 'JSON 编辑器须 wrap=off');
 
@@ -103,7 +119,7 @@ import assert from 'node:assert/strict';
   assert.ok(html.includes('auto'), 'env 无 PROXYIP 时摘要求 auto');
 
   // 2) P1 视觉与主题标记
-  for (const 标记 of ['data-theme="dark"', 'data-motion="full"', '--cut:', 'et_admin_theme', 'et_admin_motion', '[data-theme="light"]', '[data-motion="off"]']) {
+  for (const 标记 of ['data-theme="dark"', 'data-motion="full"', '--btnfg:', 'et_admin_theme', 'et_admin_motion', '[data-theme="light"]', '[data-motion="off"]']) {
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
@@ -127,6 +143,48 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
+  // 6.1) 图标系统：顶栏不得再用 ◐ / ≋ / ⟳ / ↑ 这类几何字形当图标
+  for (const 字形 of ['◐', '≋', '⟳']) {
+    assert.ok(!html.includes(字形), `顶栏不应再用字形 ${字形} 充当图标，应使用内联 SVG`);
+  }
+  assert.ok(html.includes('<svg class="ic"'), '应存在内联 SVG 图标（class="ic"）');
+  // 顶栏 3 个按钮 + 2 个链接 + 导航 5 项 = 10 个图标，少于 10 说明有位置漏改
+  assert.ok([...html.matchAll(/<svg class="ic"/g)].length >= 10, '图标数量应覆盖顶栏与全部导航项');
+  assert.ok(html.includes('aria-hidden="true"'), '装饰性图标须对辅助技术隐藏');
+  assert.ok(html.includes('.ic{'), '样式应包含图标基类 .ic');
+  assert.ok(html.includes('stroke:currentColor'), '图标应继承 currentColor 以随主题变色');
+
+  // 6.2) 导航全称/短名双标签：移动端底栏用短名，且按钮有固定可访问名称
+  for (const 标记 of ['class="lb"', 'class="ls"', '.ls{display:none}', 'aria-label="节点与订阅"']) {
+    assert.ok(html.includes(标记), `导航应包含 ${标记}`);
+  }
+
+  // 6.3) 无障碍与触控：几何语言收敛为圆角，不得再引入切角（clip-path 会同时裁掉焦点环、
+  // 阴影与 hover 反馈，且在浅色主题下被读成"缺角/渲染错误"）
+  assert.ok(!html.includes('clip-path'), '不应再用 clip-path 切角');
+  assert.ok(!html.includes('--cut:'), '未使用的 --cut 令牌应已删除');
+  assert.ok(/button:focus-visible[^}]*outline:2px solid var\(--acc2\)[^}]*outline-offset:2px/.test(html), '焦点环应走常规外偏移（圆角下不再被裁切）');
+  assert.ok(html.includes('@media(max-width:640px)'), '应保留移动端媒体查询');
+  assert.ok(/min-height:44px/.test(html), '移动端触控目标须达到 44px');
+  assert.ok(html.includes('button.iconbtn{display:inline-flex'), 'iconbtn 应为 flex 以便与图标对齐');
+
+  // 6.4) 表面层级令牌：三档语义令牌齐备，且不再由 --bg1 现场派生
+  for (const 令牌名 of ['--surf:', '--sunken:', '--raised:', '--shadow-lg:']) {
+    assert.ok(html.includes(令牌名), `主题应定义表面层级令牌 ${令牌名}`);
+  }
+  assert.ok(html.includes('var(--sunken)'), '组件应引用表面层级令牌');
+  const 层级派生次数 = [...html.matchAll(/color-mix\(in srgb,var\(--bg1\)/g)].length;
+  assert.equal(层级派生次数, 0, `表面层级应为显式令牌，不应在组件里现场派生，实际 ${层级派生次数} 处`);
+
+  // 6.6) 概览去重：同一批规格不得同时出现在卡内 kv 与 badges 行
+  assert.ok(!html.includes('id="badges"'), '重复的 badges 行应已删除（与卡内 kv 列表重复）');
+  assert.ok(html.includes('class="kvList kv-main"') && html.includes('class="kvList kv-sub"'), '规格应分主/次两级');
+  assert.ok(html.includes('.kv-main .item{font-size:14px'), '主指标应用更大的字号拉开层级');
+
+  // 6.7) 版面秩序：自检 6 卡按 3 列排 2 行；客户端格式按钮等宽成网格
+  assert.ok(/\.chk-grid\{[^}]*minmax\(280px/.test(html), '自检卡应 ≥280px 断点，6 张卡排 3 列成 2 行，避免 4+2 留空格');
+  assert.ok(/#fmt-links\{[^}]*display:grid/.test(html), '客户端格式按钮应等宽成网格，而非长短不一的一排');
+
   // 7) 每个内联 <script> 段都必须语法正确（覆盖 client.js 模板字符串转义问题）
   const 内联段 = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   assert.ok(内联段.length >= 3, `应有至少 3 个内联脚本段，实际 ${内联段.length}`);
@@ -143,6 +201,19 @@ import assert from 'node:assert/strict';
   ]);
   const 缺失id = [...引用id].filter((x) => !html.includes(`id="${x}"`));
   assert.deepEqual(缺失id, [], `client.js 引用了产物中不存在的 id：${缺失id.join(', ')}`);
+
+  // 6.5) 登录页：表单字段名是 main.js 解析密码的契约，CSP 放宽范围也必须固定
+  const 登录响应 = 登录页面('<img src=x onerror=alert(1)>', 401);
+  const 登录HTML = await 登录响应.text();
+  const 登录CSP = 登录响应.headers.get('Content-Security-Policy');
+  assert.ok(登录HTML.includes('name="password"'), '登录表单字段名必须是 password（main.js 按此解析）');
+  assert.ok(登录HTML.includes('autocomplete="current-password"'), '登录输入框应保留自动填充提示');
+  assert.ok(登录HTML.includes('<style>'), '登录页应内联样式');
+  assert.ok(登录CSP.includes("style-src 'unsafe-inline'"), '登录页 CSP 应允许内联样式');
+  assert.ok(!登录CSP.includes('unsafe-scripts') && !/script-src/.test(登录CSP), '登录页 CSP 不得放开脚本');
+  assert.ok(登录CSP.includes("default-src 'none'"), '登录页应保留 default-src none 兜底（阻断样式 url() 外发）');
+  assert.ok(!登录HTML.includes('<img src=x'), '登录页错误消息必须转义');
+  assert.ok(登录HTML.includes('&lt;img src=x onerror=alert(1)&gt;'), '登录页错误消息以转义形式出现');
 
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);

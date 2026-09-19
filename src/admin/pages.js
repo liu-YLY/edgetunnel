@@ -121,8 +121,28 @@ async function html1101(host, 访问IP) {
 </html>`;
 }
 
+// 登录页是面板的入口，故沿用同一套色彩/形状语言（切角卡片 + 青蓝强调色），
+// 但不引入任何外部资源。CSP 由 default-src 'none' 放宽到 style-src 'unsafe-inline'：
+// 脚本仍全禁、message 已转义（无样式注入入口），且样式里即使出现 url() 也会被
+// default-src 'none' 拦住，无法用于外发数据。
+const 登录样式 = `:root{color-scheme:dark;--bg:#060a12;--surf:rgba(18,28,46,.78);--line:rgba(120,170,255,.22);--fg:#dce7f5;--mut:#7d90ad;--acc:#4da3ff;--acc2:#35e0d8;--err:#ff8a80;--btnfg:#06121f}
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f9fd;--surf:rgba(255,255,255,.86);--line:rgba(30,60,110,.2);--fg:#16233a;--mut:#5b6b85;--acc:#2f6fe4;--acc2:#0b7f77;--err:#c0392b;--btnfg:#fff}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--fg);font:400 14px/1.5 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+main{width:100%;max-width:340px;background:var(--surf);border:1px solid var(--line);padding:22px;clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%)}
+h1{margin:0 0 8px;font-size:17px;letter-spacing:.6px}
+p{margin:0 0 12px;font-size:13px;color:var(--mut)}
+p:last-child{margin:14px 0 0}
+#msg{min-height:18px;margin:0 0 10px;color:var(--err)}
+label{display:block;font-size:12px;color:var(--mut)}
+input{width:100%;margin-top:6px;padding:11px 10px;font-size:14px;color:var(--fg);background:transparent;border:1px solid var(--line);outline:none}
+input:focus{border-color:var(--acc2);box-shadow:0 0 0 2px color-mix(in srgb,var(--acc2) 26%,transparent)}
+button{width:100%;min-height:44px;margin-top:16px;border:0;color:var(--btnfg);background:linear-gradient(135deg,var(--acc2),var(--acc));font-size:14px;font-weight:600;cursor:pointer;clip-path:polygon(0 6px,6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--acc2);outline-offset:-2px}
+a{color:var(--acc)}`;
+
 function 登录页面(message = '', status = 200) {
- return new Response(`<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>EdgeTunnel 登录</title><body><main><h1>EdgeTunnel</h1><p role="status">${转义HTML(message)}</p><form method="post"><label>管理员密码 <input name="password" type="password" required autocomplete="current-password"></label><button>登录</button></form><p>登录成功后<a href="/admin">进入管理后台</a>。</p></main></body></html>`, { status, headers: { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Content-Security-Policy':"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" } });
+ return new Response(`<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>EdgeTunnel 登录</title><style>${登录样式}</style></head><body><main><h1>EdgeTunnel</h1><p>请输入管理员密码以进入管理面板。</p><p id="msg" role="status">${转义HTML(message)}</p><form method="post"><label for="password">管理员密码</label><input id="password" name="password" type="password" required autocomplete="current-password"><button>登录</button></form><p>登录成功后<a href="/admin">进入管理后台</a>。</p></main></body></html>`, { status, headers: { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" } });
 }
 
 export { html1101, nginx, 登录页面 };

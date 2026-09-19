@@ -2,7 +2,28 @@
 // Explicit ES module graph -> single Cloudflare module Worker.
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
 const { buildSync } = require('esbuild');
+
+// 自订体积预算：CF 平台上限为 64 MiB（2026-09 起全套餐统一按未压缩计），
+// 这里按 1 MiB 自我设限。真正要保护的不是平台上限，而是 _worker.js 的可读性
+// （支持直接复制该文件到控制台部署）与冷启动解析成本。
+const 体积预算 = 1024 * 1024;
+
+function 格式化体积(字节) {
+  return 字节 >= 1024 * 1024 ? (字节 / 1024 / 1024).toFixed(2) + ' MB' : (字节 / 1024).toFixed(1) + ' KB';
+}
+
+function 报告体积(bundle, 输出到stderr = false) {
+  const 原始 = Buffer.byteLength(bundle);
+  const 压缩 = zlib.gzipSync(bundle, { level: 9 }).length;
+  const 占用 = ((原始 / 体积预算) * 100).toFixed(1);
+  // 直接向 stdout 输出产物时，报告改走 stderr，避免污染管道内容。
+  const 输出 = 输出到stderr ? console.error : console.log;
+  输出(`[build] 体积：${格式化体积(原始)} 未压缩 · ${格式化体积(压缩)} gzip · 预算 ${格式化体积(体积预算)}（占用 ${占用}%）`);
+  if (原始 > 体积预算) console.warn(`[build] 警告：产物超出 ${格式化体积(体积预算)} 自订预算，请检查是否引入了不必要的依赖或重复代码`);
+  return { 原始, 压缩 };
+}
 
 function buildBundle() {
   return buildSync({
@@ -30,12 +51,13 @@ function main() {
     else throw new Error(`未知参数或缺少参数值: ${args[i]}`);
   }
   const bundle = buildBundle();
+  const 体积 = 报告体积(bundle, !out && !check);
   if (out) {
     const dest = path.resolve(__dirname, out);
     if (fs.existsSync(dest) && !force) throw new Error('目标已存在；使用 --force 覆盖');
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, bundle);
-    console.log(`[build] ES Modules -> ${out} (${Buffer.byteLength(bundle)} 字节)`);
+    console.log(`[build] ES Modules -> ${out} (${体积.原始} 字节)`);
   } else if (!check) process.stdout.write(bundle);
   else console.log('[build] ES Modules 解析、链接、打包通过；未写入文件');
 }
