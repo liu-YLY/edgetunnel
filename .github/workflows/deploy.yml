@@ -29,6 +29,12 @@ jobs:
   deploy:
     name: Check and Deploy v20251104
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ADMIN: ${{ secrets.ADMIN }}
+      KEY: ${{ secrets.KEY }}
+      UUID: ${{ secrets.UUID }}
+      OFF_LOG: ${{ secrets.OFF_LOG }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -40,21 +46,19 @@ jobs:
       - run: npm ci
       # 防漂移：校验构建产物与仓库内 _worker.js 逐字节一致 + 全部测试
       - run: npm run check
-      - name: Read _worker.js marker
-        id: marker
-        run: grep -c "edgetunnel 管理面板" _worker.js || true
 
       - name: Set Workers secrets (self-healing)
-        if: secrets.CLOUDFLARE_API_TOKEN != ''
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        if: env.CLOUDFLARE_API_TOKEN != ''
         run: |
           set -e
-          put() { n="$1"; v="${!n:-}"; if [ -n "$v" ]; then printf '%s' "$v" | npx wrangler secret put "$n" --env '' >/dev/null; echo "secret $n OK"; fi; }
-          for s in ADMIN KEY UUID OFF_LOG; do put "$s"; done
+          for s in ADMIN KEY UUID OFF_LOG; do
+            v="${!s}"
+            if [ -n "$v" ]; then
+              printf '%s' "$v" | npx wrangler secret put "$s" --env '' >/dev/null
+              echo "secret $s OK"
+            fi
+          done
 
       - name: Deploy
-        if: secrets.CLOUDFLARE_API_TOKEN != ''
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy --env ''
