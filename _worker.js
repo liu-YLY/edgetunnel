@@ -1370,8 +1370,9 @@ function httpConnect(host, port, data, tls, connector, proxy) {
 }
 async function TCP连接延迟(主机, 端口, 超时毫秒 = 3e3) {
   const 开始 = performance.now();
+  let socket = null;
   try {
-    const socket = cloudflareConnect({ hostname: 主机, port: 端口 });
+    socket = cloudflareConnect({ hostname: 主机, port: 端口 });
     await Promise.race([
       socket.opened,
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 超时毫秒))
@@ -1385,6 +1386,10 @@ async function TCP连接延迟(主机, 端口, 超时毫秒 = 3e3) {
     }, 0);
     return { ok: true, ms };
   } catch (error) {
+    try {
+      socket?.close?.();
+    } catch (e) {
+    }
     return { ok: false, ms: Math.max(0, Math.round(performance.now() - 开始)), error: String(error?.message || error).slice(0, 120) };
   }
 }
@@ -6491,7 +6496,7 @@ async function 处理请求(request, env, ctx, 配置) {
           const 主机 = ipv4 ? ipv4[1] : ipv6[1];
           const 端口 = Number(ipv4 ? ipv4[2] : ipv6[2]);
           if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) return new Response(JSON.stringify({ error: "端口无效" }), { status: 400, headers: { "Content-Type": "application/json;charset=utf-8" } });
-          const 结果 = await TCP连接延迟(主机, 端口, Number(url.searchParams.get("timeout") || "3000"));
+          const 结果 = await TCP连接延迟(主机, 端口, Math.min(5e3, Math.max(100, Number(url.searchParams.get("timeout")) || 3e3)));
           return new Response(JSON.stringify({ target: 目标, ...结果 }), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8", "Cache-Control": "no-store" } });
         } else if (访问路径 === "admin/cf.json") {
           return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });

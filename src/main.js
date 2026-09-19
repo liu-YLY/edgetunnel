@@ -315,7 +315,7 @@ async function 处理请求(request, env, ctx, 配置) {
 						const 主机 = ipv4 ? ipv4[1] : ipv6[1];
 						const 端口 = Number(ipv4 ? ipv4[2] : ipv6[2]);
 						if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) return new Response(JSON.stringify({ error: '端口无效' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-						const 结果 = await TCP连接延迟(主机, 端口, Number(url.searchParams.get('timeout') || '3000'));
+						const 结果 = await TCP连接延迟(主机, 端口, Math.min(5000, Math.max(100, Number(url.searchParams.get('timeout')) || 3000)));
 						return new Response(JSON.stringify({ target: 目标, ...结果 }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });

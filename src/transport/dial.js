@@ -171,10 +171,12 @@ function httpConnect(host, port, data, tls, connector, proxy) { return 有限代
 
 // M1-P2：面板测速用 TCP 连通探测。只做 connect 计时（I/O 等待），不发送数据；
 // cloudflare:sockets 仍只在 dial.js 导入（MODULES.md 边界）。连接失败也返回耗时供前端展示。
+// 成功与失败（含超时）分支都尽力关闭 socket，避免对黑洞 IP 重复探测累积悬挂连接。
 async function TCP连接延迟(主机, 端口, 超时毫秒 = 3000) {
 	const 开始 = performance.now();
+	let socket = null;
 	try {
-		const socket = cloudflareConnect({ hostname: 主机, port: 端口 });
+		socket = cloudflareConnect({ hostname: 主机, port: 端口 });
 		await Promise.race([
 			socket.opened,
 			new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 超时毫秒)),
@@ -183,6 +185,7 @@ async function TCP连接延迟(主机, 端口, 超时毫秒 = 3000) {
 		setTimeout(() => { try { socket.close(); } catch (e) { } }, 0);
 		return { ok: true, ms };
 	} catch (error) {
+		try { socket?.close?.(); } catch (e) { }
 		return { ok: false, ms: Math.max(0, Math.round(performance.now() - 开始)), error: String(error?.message || error).slice(0, 120) };
 	}
 }
