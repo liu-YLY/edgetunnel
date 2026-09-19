@@ -21,8 +21,8 @@ import assert from 'node:assert/strict';
   // 2) 订阅链接与节点链接出现在页面（server-render 或 __ET__ 数据中）
   assert.ok(html.includes('tok123') && html.includes('edt2.example.org'), '注入的 token 与 host 出现');
 
-  // 1.1) Glassmorphism 主题标记（CSS 层）
-  for (const 标记 of ['data-theme="glass"', '.glass-card', 'backdrop-filter', '--glass-bg', 'prefers-reduced-motion']) {
+  // 1.1) 动效降级标记（CSS 层；glassmorphism 标记已由 P1 深蓝令牌取代）
+  for (const 标记 of ['prefers-reduced-motion']) {
     assert.ok(html.includes(标记), `HTML 应包含主题标记 ${标记}`);
   }
 
@@ -55,6 +55,11 @@ import assert from 'node:assert/strict';
 
   // 4) 出站模式摘要：无 PROXYIP 显示 auto
   assert.ok(html.includes('auto'), 'env 无 PROXYIP 时摘要求 auto');
+
+  // 2) P1 视觉与主题标记
+  for (const 标记 of ['data-theme="dark"', 'data-motion="full"', '--cut:', 'et_admin_theme', 'et_admin_motion', '[data-theme="light"]', '[data-motion="off"]']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
 
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
