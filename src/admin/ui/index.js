@@ -48,11 +48,18 @@ function 管理面板HTML(env, config_JSON) {
     ['TCP_CONCURRENT_DIAL', env.TCP_CONCURRENT_DIAL || '2'],
   ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join('');
   return `<!DOCTYPE html>
-<html lang="zh-CN" data-theme="glass">
+<html lang="zh-CN" data-theme="dark" data-motion="full">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>edgetunnel 管理面板 · ${sse}</title>
+<script>(function(){try{
+var d=document.documentElement,t=localStorage.getItem('et_admin_theme'),m=localStorage.getItem('et_admin_motion');
+var light=t?t==='light':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches);
+d.setAttribute('data-theme',light?'light':'dark');
+if(!m)m=(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)?'off':'full';
+d.setAttribute('data-motion',m);
+}catch(e){}})();</script>
 <style>${主题CSS()}${样式CSS()}${动效CSS()}</style>
 </head>
 <body>
