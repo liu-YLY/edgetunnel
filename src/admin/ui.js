@@ -121,10 +121,24 @@ function 管理面板HTML(env, config_JSON) {
 </head>
 <body>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="kbd-help" role="dialog" aria-modal="true" aria-label="快捷键">
+  <div class="box">
+    <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
+    <table>
+      <tbody>
+        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
+        <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
+        <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
+        <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="wrap" id="top">
 <header>
   <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
-  <div class="row"><a href="/admin/config">经典 JSON 页</a> · <a href="/logout">退出登录</a></div>
+  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
 </header>
 <nav>
   <button type="button" class="on" data-tab="overview">概览</button>
@@ -217,7 +231,7 @@ function 管理面板HTML(env, config_JSON) {
   </div>
   <div class="card">
     <h2>KV 全量配置（JSON）</h2>
-    <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><span id="cfg-status" class="dim"></span></div>
+    <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
     <label for="cfg">当前配置 JSON</label>
     <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
   </div>
@@ -228,6 +242,12 @@ function 管理面板HTML(env, config_JSON) {
 </section>
 
 <section class="page" data-page="ops">
+  <div class="card">
+    <h2>诊断信息</h2>
+    <div class="mono" id="diag"></div>
+    <div class="row"><button type="button" class="btn ghost" id="btn-diag-copy">复制诊断 JSON</button><span class="dim" id="diag-note"></span></div>
+    <p class="dim" style="margin-top:10px">登录/写接口受 IP 限流（60 秒）与同源校验保护；会话绑定 UA 与 host，24 小时过期。</p>
+  </div>
   <div class="card">
     <h2>Telegram 通知</h2>
     <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || '')) || '未配置')}" />
@@ -310,15 +330,21 @@ function 管理面板HTML(env, config_JSON) {
 
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
-  tabs.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      tabs.forEach(function (b) { b.classList.toggle('on', b === btn); });
-      Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
-      if (btn.dataset.tab === 'overview') loadOverview();
-      if (btn.dataset.tab === 'config') loadConfig();
-      if (btn.dataset.tab === 'ops') loadOps();
-    });
-  });
+  function switchTab(btn) {
+    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); });
+    Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
+    try { localStorage.setItem('et_admin_tab', btn.dataset.tab); } catch (e) {}
+    if (btn.dataset.tab === 'overview') loadOverview();
+    if (btn.dataset.tab === 'config') loadConfig();
+    if (btn.dataset.tab === 'ops') { loadOps(); loadDiag(); }
+    if (btn.dataset.tab === 'nodes') loadNodes();
+  }
+  tabs.forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn); }); });
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
+    if (saved) { var b = document.querySelector('[data-tab="' + saved + '"]'); if (b) switchTab(b); }
+  })();
 
   // 概览
   function loadOverview() {
@@ -476,6 +502,58 @@ function 管理面板HTML(env, config_JSON) {
     if (!confirm('确认将配置重置为默认值？此操作不可撤销。')) return;
     api('/admin/init', { method: 'POST' }).then(function (r) { toast('配置已重置', true); loadConfig(); }).catch(function (e) { toast('重置失败：' + e.message, false); });
   });
+
+  // 诊断信息
+  function loadDiag() {
+    api('/admin/config.json').then(function (cfg) {
+      var d = {
+        host: S.host, uuid: S.link ? (S.link.split('://')[1] || '').split('@')[0] : '',
+        协议: (S.协议类型 || '') + '/' + (S.传输协议 || ''), 出站: S.出站 || '', path: S.path || '',
+        Version: cfg.Version || '', UA: navigator.userAgent, generatedAt: new Date().toISOString()
+      };
+      $('#diag').textContent = JSON.stringify(d, null, 2);
+      var note = $('#diag-note'); if (note) note.textContent = '版本 ' + (cfg.Version || '未知');
+    }).catch(function (e) { $('#diag').textContent = '诊断数据加载失败：' + e.message; });
+  }
+  $('#btn-diag-copy').addEventListener('click', function () { copy($('#diag').textContent || ''); });
+
+  // JSON 导出 / 导入
+  $('#btn-cfg-export').addEventListener('click', function () {
+    if (!$('#cfg').value) { toast('先点击「重新加载」获取配置', false); return; }
+    copy($('#cfg').value);
+  });
+  $('#btn-cfg-import').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) { toast('浏览器不支持剪贴板读取', false); return; }
+    navigator.clipboard.readText().then(function (t) {
+      var v;
+      try { v = JSON.stringify(JSON.parse(t), null, 2); } catch (e) { toast('剪贴板内容不是合法 JSON', false); return; }
+      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存');
+    }).catch(function () { toast('无法读取剪贴板', false); });
+  });
+
+  // 快捷键
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var tag = (document.activeElement || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'Escape') { closeQR(); var h = $('#kbd-help'); if (h) h.classList.remove('open'); return; }
+    var map = { '1': 'overview', '2': 'nodes', '3': 'config', '4': 'ops' };
+    if (map[e.key]) { var b = document.querySelector('[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
+    else if (e.key === 'c' || e.key === 'C') { var l = $('#btn-copy-link'); if (l) l.click(); }
+    else if (e.key === 'r' || e.key === 'R') { var u = $('#btn-refresh-usage'); if (u) u.click(); }
+    else if (e.key === '?') { var h2 = $('#kbd-help'); if (h2) h2.classList.toggle('open'); }
+  });
+  var _kbdClose = document.getElementById('btn-kbd-close');
+  if (_kbdClose) _kbdClose.addEventListener('click', function () { $('#kbd-help').classList.remove('open'); });
+  var _kbd = document.getElementById('kbd-help');
+  if (_kbd) _kbd.addEventListener('click', function (e) { if (e.target === this) this.classList.remove('open'); });
+
+  // 回到页面自动刷新用量；header 刷新
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') loadOverview();
+  });
+  $('#btn-refresh-top').addEventListener('click', function () { loadOverview(); loadNodes(); loadDiag(); toast('已刷新', true); });
+  loadDiag();
 
   renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
 })();

@@ -36,6 +36,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含节点增强元素 ${标记}`);
   }
 
+  // 1.4) 运维/交互增强元素
+  for (const 标记 of ['id="diag"', 'id="btn-diag-copy"', 'id="btn-cfg-export"', 'id="btn-cfg-import"', 'id="kbd-help"', 'id="btn-refresh-top"', 'id="top"']) {
+    assert.ok(html.includes(标记), `HTML 应包含运维/交互增强元素 ${标记}`);
+  }
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,
