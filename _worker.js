@@ -345,45 +345,775 @@ ${config_JSON.CF.Usage.success ? `📊 <b>请求用量：</b>${config_JSON.CF.Us
     console.error(`日志记录失败: ${error.message}`);
   }
 }
-function 管理面板配置页HTML(env, config_JSON) {
-  const 只读env字段 = [
-    ["ADMIN", env.ADMIN ? "已配置（用于登录）" : "未配置"],
+
+// src/admin/qr.js
+var 二维码运行时 = `window.QRCode = (function () {
+  'use strict';
+  var EXP = new Array(512), LOG = new Array(256);
+  (function () {
+    var x = 1;
+    for (var i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11D; }
+    for (var j = 255; j < 512; j++) { EXP[j] = EXP[j - 255]; }
+  })();
+  function gmul(a, b) { return (a && b) ? EXP[LOG[a] + LOG[b]] : 0; }
+  function rsGen(ecc) {
+    var p = [1];
+    for (var i = 0; i < ecc; i++) {
+      var n = new Array(p.length + 1);
+      for (var k = 0; k < n.length; k++) n[k] = 0;
+      for (var j = 0; j < p.length; j++) { n[j] ^= gmul(p[j], EXP[i]); n[j + 1] ^= p[j]; }
+      p = n;
+    }
+    return p;
+  }
+  function rsRem(data, ecc) {
+    var g = rsGen(ecc), buf = new Array(ecc);
+    for (var i = 0; i < ecc; i++) buf[i] = 0;
+    for (var i = 0; i < data.length; i++) {
+      var f = data[i] ^ buf[0];
+      for (var j = 0; j < ecc - 1; j++) buf[j] = buf[j + 1];
+      buf[ecc - 1] = 0;
+      for (var j = 0; j < ecc; j++) buf[j] ^= gmul(g[j + 1], f);
+    }
+    return buf;
+  }
+  var V = { 1: { blk: 1, ecc: 10, data: 16 }, 2: { blk: 1, ecc: 16, data: 28 }, 3: { blk: 1, ecc: 26, data: 44 },
+            4: { blk: 2, ecc: 18, data: 32 }, 5: { blk: 2, ecc: 24, data: 43 }, 6: { blk: 4, ecc: 16, data: 27 } };
+  var CAP = { 1: 14, 2: 26, 3: 42, 4: 62, 5: 84, 6: 106 };
+  var ALIGN = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34] };
+  function baseMatrix(size, align) {
+    var m = [];
+    for (var y = 0; y < size; y++) { var r = new Array(size); for (var x = 0; x < size; x++) r[x] = 0; m.push(r); }
+    function finder(ox, oy) {
+      for (var j = -1; j <= 7; j++) {
+        for (var i = -1; i <= 7; i++) {
+          var x = ox + i, y = oy + j;
+          if (x < 0 || y < 0 || x >= size || y >= size) continue;
+          var in7 = j >= 0 && j <= 6 && i >= 0 && i <= 6;
+          var dark = in7 && (j === 0 || j === 6 || i === 0 || i === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4));
+          m[y][x] = dark ? 1 : 0;
+        }
+      }
+    }
+    finder(0, 0); finder(size - 7, 0); finder(0, size - 7);
+    for (var t = 8; t < size - 8; t++) { m[6][t] = (t % 2 === 0) ? 1 : 0; m[t][6] = (t % 2 === 0) ? 1 : 0; }
+    for (var a = 0; a < align.length; a++) {
+      for (var b = 0; b < align.length; b++) {
+        var cx = align[a], cy = align[b];
+        if (m[cy][cx] !== 0) continue;
+        for (var j = -2; j <= 2; j++) {
+          for (var i = -2; i <= 2; i++) {
+            m[cy + j][cx + i] = (i === 0 && j === 0) ? 1 : ((i === -2 || i === 2 || j === -2 || j === 2) ? 1 : 0);
+          }
+        }
+      }
+    }
+    // 格式信息位 + 暗色模块占位（值随意，仅用于占位使数据写入跳过这些单元）
+    m[size - 8][8] = 1; // 暗色模块：列 8、行 size-8
+    return m;
+  }
+  function encodeFormat(mask) {
+    var data = mask; // EC=M（00）→ 高 3 位数据为 0
+    var rem = data << 10;
+    for (var i = 14; i >= 10; i--) { if ((rem >> i) & 1) rem ^= 0x537 << (i - 10); }
+    return ((data << 10) | rem) ^ 0x5412;
+  }
+  var FORMAT_POS = null; // 惰性构建：每 bit 两个位置（竖排 x=8 + 横排 y=8），共 2×15
+  function formatPositions(size) {
+    if (FORMAT_POS && FORMAT_POS.size === size) return FORMAT_POS.list;
+    var list = [];
+    for (var i = 0; i < 15; i++) {
+      var vx = 8, vy = i < 6 ? i : (i < 8 ? i + 1 : size - 15 + i);                       // 竖排（左/左下副本，x=8）
+      var hx = i < 8 ? size - 1 - i : (i === 8 ? 7 : 15 - i - 1 + 8), hy = 8;             // 横排（上/右上副本，y=8）
+      list.push({ x: vx, y: vy }, { x: hx, y: hy });
+    }
+    FORMAT_POS = { size: size, list: list };
+    return list;
+  }
+  function maskBit(x, y, mask) {
+    switch (mask) {
+      case 0: return ((x + y) % 2) === 0;
+      case 1: return (y % 2) === 0;
+      case 2: return (x % 3) === 0;
+      case 3: return ((x + y) % 3) === 0;
+      case 4: return ((Math.floor(y / 2) + Math.floor(x / 3)) % 2) === 0;
+      case 5: return (((x * y) % 2) + ((x * y) % 3)) === 0;
+      case 6: return ((((x * y) % 2) + ((x * y) % 3)) % 2) === 0;
+      default: return ((((x + y) % 2) + ((x * y) % 3)) % 2) === 0;
+    }
+  }
+  function penalty(m) {
+    var size = m.length, score = 0;
+    for (var y = 0; y < size; y++) {
+      var run = 1;
+      for (var x = 1; x < size; x++) {
+        if (m[y][x] === m[y][x - 1]) { run++; } else { if (run >= 5) score += 3 + (run - 5); run = 1; }
+      }
+      if (run >= 5) score += 3 + (run - 5);
+    }
+    for (var x = 0; x < size; x++) {
+      var runC = 1;
+      for (var y = 1; y < size; y++) {
+        if (m[y][x] === m[y - 1][x]) { runC++; } else { if (runC >= 5) score += 3 + (runC - 5); runC = 1; }
+      }
+      if (runC >= 5) score += 3 + (runC - 5);
+    }
+    for (var j = 0; j < size - 1; j++) {
+      for (var i = 0; i < size - 1; i++) {
+        var v = m[j][i];
+        if (m[j][i + 1] === v && m[j + 1][i] === v && m[j + 1][i + 1] === v) score += 3;
+      }
+    }
+    var dark = 0;
+    for (var j = 0; j < size; j++) { for (var i = 0; i < size; i++) { dark += m[j][i]; } }
+    var percent = (dark * 100) / (size * size);
+    score += Math.floor(Math.abs(percent - 50) / 5) * 10;
+    return score;
+  }
+  function clone(m) { var out = []; for (var i = 0; i < m.length; i++) { out.push(m[i].slice()); } return out; }
+  function generate(text) {
+    if (typeof text !== 'string') text = String(text);
+    var bytes = [];
+    for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); bytes.push(c <= 0xff ? c : 63); }
+    var version = 1;
+    while (version <= 6 && bytes.length > CAP[version]) version++;
+    if (version > 6) throw new Error('内容过长，二维码仅支持不超过 106 个 ASCII 字符');
+    var cfg = V[version], size = 17 + version * 4;
+    var totalData = cfg.blk * cfg.data;
+    var bits = [];
+    function push(v, n) { for (var k = n - 1; k >= 0; k--) bits.push((v >> k) & 1); }
+    push(4, 4); push(bytes.length, 8);
+    for (var i = 0; i < bytes.length; i++) push(bytes[i], 8);
+    var rem8 = 8 - (bits.length % 8); if (rem8 === 8) rem8 = 0;
+    var term = Math.min(4, rem8); push(0, term === 0 ? 0 : term);
+    while (bits.length % 8 !== 0) push(0, 8 - (bits.length % 8));
+    var dataWords = [];
+    for (var i = 0; i < bits.length; i += 8) {
+      var b = 0; for (var k = 0; k < 8; k++) b = (b << 1) | (bits[i + k] || 0);
+      dataWords.push(b);
+    }
+    while (dataWords.length < totalData) dataWords.push((dataWords.length % 2) === 0 ? 0xEC : 0x11);
+    var per = cfg.data;
+    var blocks = [];
+    for (var b = 0; b < cfg.blk; b++) blocks.push(dataWords.slice(b * per, (b + 1) * per));
+    var eccs = [];
+    for (var b = 0; b < cfg.blk; b++) eccs.push(rsRem(blocks[b], cfg.ecc));
+    var final = [];
+    for (var i = 0; i < per; i++) { for (var b = 0; b < cfg.blk; b++) final.push(blocks[b][i]); }
+    for (var i = 0; i < cfg.ecc; i++) { for (var b = 0; b < cfg.blk; b++) final.push(eccs[b][i]); }
+    // 数据单元收集（跳过功能图案、格式位、暗色模块占位）
+    var base = baseMatrix(size, ALIGN[version]);
+    var fmt = [8, size - 8].join(',');
+    var skip = formatPositions(size);
+    function isFunc(x, y) { return base[y][x] !== 0 || (x === 8 && y === size - 8) || skip.some(function (p) { return p.x === x && p.y === y; }); }
+    var cells = [];
+    var dir = -1, col = size - 1;
+    function walk() {
+      if (col === 6) col--;
+      for (var row = dir < 0 ? size - 1 : 0; row >= 0 && row < size; row += dir) {
+        for (var k = 0; k < 2; k++) {
+          var x = col - k;
+          if (x < 0) continue;
+          if (!isFunc(x, row)) cells.push({ x: x, y: row });
+        }
+      }
+      if (col - 2 < 0) return;
+      dir = -dir; col -= 2; walk();
+    }
+    walk();
+    var best = null;
+    for (var mask = 0; mask < 8; mask++) {
+      var trial = clone(base);
+      trial[size - 8][8] = 1;
+      for (var i = 0; i < cells.length && i < final.length; i++) {
+        var c = cells[i];
+        var v = final[i] ^ (maskBit(c.x, c.y, mask) ? 1 : 0);
+        trial[c.y][c.x] = v;
+      }
+      var s = penalty(trial);
+      if (!best || s < best.score) best = { mask: mask, m: trial, score: s };
+    }
+    var fmtBits = encodeFormat(best.mask);
+    (function putFormat() {
+      var list = formatPositions(size);
+      for (var i = 0; i < 15; i++) {
+        var bit = ((fmtBits >> i) & 1) === 1 ? 1 : 0;
+        best.m[list[i * 2].y][list[i * 2].x] = bit;       // 竖排（左/左下副本）
+        best.m[list[i * 2 + 1].y][list[i * 2 + 1].x] = bit; // 横排（上/右上副本）
+      }
+      best.m[size - 8][8] = 1; // 暗色模块（列 8、行 size-8）
+    })();
+    return best.m;
+  }
+  function generateSVG(text, scale) {
+    var m = generate(text), size = m.length, s = scale || 3;
+    var rects = [];
+    for (var y = 0; y < size; y++) { for (var x = 0; x < size; x++) { if (m[y][x]) rects.push('<rect x="' + (x * s) + '" y="' + (y * s) + '" width="' + s + '" height="' + s + '" fill="#111" />'); } }
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (size * s) + ' ' + (size * s) + '" width="' + (size * s) + '" height="' + (size * s) + '" shape-rendering="crispEdges" role="img" aria-label="节点二维码">' + rects.join('') + '</svg>';
+  }
+  return { generate: generate, generateSVG: generateSVG };
+})();`;
+
+// src/admin/ui.js
+var CSS = `
+:root{--bg1:#0b1020;--bg2:#131a2e;--bg3:#0e1424;--glass-bg:rgba(255,255,255,.04);--glass-line:rgba(255,255,255,.09);--fg:#e6e8ee;--mut:#8b93a7;--acc:#6e8bff;--acc2:#22d3ee;--ok:#3fb950;--err:#f85149;--r:18px;--shadow:0 12px 32px rgba(0,0,0,.35)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;color:var(--fg);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;background:linear-gradient(160deg,var(--bg1),var(--bg2) 55%,var(--bg3));background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(900px 500px at 15% -10%,rgba(110,139,255,.22),transparent 60%),radial-gradient(700px 420px at 90% 0%,rgba(34,211,238,.16),transparent 60%)}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 84px;position:relative;z-index:1}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:19px;margin:0;letter-spacing:.2px}h1 small{color:var(--mut);font-weight:400;font-size:13px}
+a{color:#9db8ff;text-decoration:none}a:hover{text-decoration:underline}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+nav button{background:transparent;border:1px solid var(--glass-line);color:var(--mut);border-radius:999px;padding:8px 16px;font-size:14px;cursor:pointer;transition:all .18s ease}
+nav button:hover{color:var(--fg);border-color:rgba(255,255,255,.22)}
+nav button.on{background:linear-gradient(135deg,var(--acc),var(--acc2));border-color:transparent;color:#fff;box-shadow:0 4px 18px rgba(110,139,255,.4)}
+.page{display:none;opacity:0;transform:translateY(6px);transition:opacity .22s ease,transform .22s ease}
+.page.on{display:block;opacity:1;transform:none}
+.card,.glass-card{background:var(--glass-bg);border:1px solid var(--glass-line);border-radius:var(--r);padding:18px;margin-bottom:14px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);box-shadow:var(--shadow);transition:transform .18s ease}
+.card:hover,.glass-card:hover{transform:translateY(-2px)}
+.card h2,.glass-card h2{font-size:15px;margin:0 0 12px;color:#c9d2e3}
+.hero{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.gauge{flex:0 0 120px}
+label{font-size:12px;color:var(--mut);display:block;margin:10px 0 4px}
+input,select,textarea{width:100%;background:rgba(11,16,32,.5);color:#d8e0ee;border:1px solid var(--glass-line);border-radius:10px;padding:9px 10px;font-size:13px;outline:none;transition:border-color .15s ease,box-shadow .15s ease}
+input:focus,select:focus,textarea:focus{border-color:rgba(110,139,255,.6);box-shadow:0 0 0 3px rgba(110,139,255,.18)}
+textarea{font:12px/1.5 monospace;resize:vertical}
+button.btn{min-height:44px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;border:0;border-radius:10px;padding:9px 18px;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(110,139,255,.28);transition:all .18s ease}
+button.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+button.btn:active{transform:translateY(0) scale(.98)}
+button.ghost{background:var(--glass-bg);color:var(--fg);border:1px solid var(--glass-line);box-shadow:none}
+button.ghost:hover{background:rgba(255,255,255,.08)}
+button.iconbtn{min-height:36px;background:var(--glass-bg);color:var(--fg);border:1px solid var(--glass-line);border-radius:10px;padding:6px 14px;font-size:13px;cursor:pointer}
+button.iconbtn:hover{background:rgba(255,255,255,.08)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--acc2);outline-offset:2px}
+table{width:100%;border-collapse:collapse;font-size:13px}td{overflow-wrap:anywhere;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06)}td.mn{width:200px;color:var(--mut)}
+.qr svg{max-width:180px;height:auto;background:#fff;padding:8px;border-radius:10px}
+.mono{font:12px/1.5 monospace;word-break:break-all;background:rgba(11,16,32,.5);border:1px solid var(--glass-line);border-radius:10px;padding:10px;margin:6px 0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kvList{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.kvList .item{background:rgba(11,16,32,.5);border:1px solid var(--glass-line);border-radius:12px;padding:10px}
+.kvList .item b{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+.dim{color:var(--mut);font-size:13px}
+/* 概览增强 */
+.clock{display:flex;gap:10px;align-items:baseline;justify-content:flex-end;font-variant-numeric:tabular-nums;font-size:14px;margin-bottom:10px}
+.clock .t{font-weight:600;letter-spacing:1px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.badge{font-size:12px;color:#d8e0ee;background:rgba(110,139,255,.14);border:1px solid rgba(110,139,255,.35);border-radius:999px;padding:4px 10px}
+#chart{position:relative}
+#chart svg{width:100%;height:auto}
+#chart-tip{position:absolute;display:none;pointer-events:none;background:rgba(11,16,32,.92);border:1px solid var(--glass-line);border-radius:8px;padding:6px 10px;font-size:12px;z-index:5;white-space:nowrap;box-shadow:var(--shadow)}
+/* 节点 Modal */
+#qr-modal{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(6,9,18,.6);backdrop-filter:blur(6px)}
+#qr-modal.open{display:flex}
+#qr-modal .box{background:#fff;border-radius:14px;padding:18px;max-width:88vw;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+#qr-modal .box svg{width:100%;max-width:280px;height:auto}
+/* 快捷键帮助浮层 */
+#kbd-help{position:fixed;inset:0;z-index:19;display:none;align-items:center;justify-content:center;background:rgba(6,9,18,.6);backdrop-filter:blur(6px)}
+#kbd-help.open{display:flex}
+#kbd-help .box{background:var(--glass-bg);border:1px solid var(--glass-line);border-radius:var(--r);padding:20px;max-width:88vw;backdrop-filter:blur(20px)}
+#kbd-help table{font-size:13px}
+#kbd-help kbd{font:12px ui-monospace,monospace;background:rgba(255,255,255,.1);border:1px solid var(--glass-line);border-bottom-width:2px;border-radius:6px;padding:2px 6px}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:rgba(11,16,32,.92);border:1px solid var(--glass-line);border-radius:999px;padding:10px 18px;font-size:14px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:30;max-width:86vw;box-shadow:var(--shadow)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+#toast.ok{border-color:var(--ok);color:#baf0c3}#toast.ok::before{content:"✓ "}
+#toast.err{border-color:var(--err);color:#ffb3b0}#toast.err::before{content:"✕ "}
+@media(max-width:640px){.hero{flex-direction:column}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(11,16,32,.85);backdrop-filter:blur(20px);justify-content:space-around}
+nav button{flex:1;padding:8px 6px}.wrap{padding-bottom:96px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+`;
+function 管理面板HTML(env, config_JSON) {
+  const 出站 = env.PROXYIP ? "manual(" + (String(env.PROXYIP).includes(",") ? "多候选" : 掩码敏感信息(String(env.PROXYIP))) + ")" : String(env.出站模式 || env.EGRESS_MODE || "auto");
+  const 摘 = {
+    host: config_JSON.HOST || "",
+    link: config_JSON.LINK || "",
+    subname: config_JSON.优选订阅生成?.SUBNAME || "edgetunnel",
+    token: config_JSON.优选订阅生成?.TOKEN || "",
+    出站,
+    path: config_JSON.完整节点路径 || "/",
+    协议类型: config_JSON.协议类型,
+    传输协议: config_JSON.传输协议,
+    gRPC模式: config_JSON.gRPC模式 || "gun",
+    Fingerprint: config_JSON.Fingerprint || "chrome",
+    ECH: !!config_JSON.ECH,
+    启用0RTT: !!config_JSON.启用0RTT,
+    TLS分片: config_JSON.TLS分片 || "",
+    ALPN: config_JSON.ALPN || "",
+    SS: { 加密方式: config_JSON.SS?.加密方式 || "aes-128-gcm", TLS: !!config_JSON.SS?.TLS },
+    反代: config_JSON.反代?.PROXYIP || "auto",
+    用量: { ...{ success: false, pages: 0, workers: 0, total: 0, max: 1e5 }, ...config_JSON.CF?.Usage },
+    TG: config_JSON.TG || { 启用: false, BotToken: null, ChatID: null },
+    CF: config_JSON.CF || {}
+  };
+  const 订阅链接 = "https://" + 摘.host + "/sub?token=" + encodeURIComponent(摘.token);
+  const sse = 转义HTML(摘.host);
+  const env只读行 = [
+    ["ADMIN", env.ADMIN ? "已配置" : "未配置"],
     ["KEY", env.KEY ? 掩码敏感信息(String(env.KEY)) : "未配置"],
-    ["HOST", env.HOST || "（默认取访问域名）"],
-    ["UUID", env.UUID || "（自动生成）"],
-    ["PROXYIP", env.PROXYIP || "（未配置）"],
+    ["HOST", env.HOST || "（默认访问域名）"],
+    ["UUID", env.UUID || "（自动派生）"],
+    ["PROXYIP", env.PROXYIP ? 掩码敏感信息(String(env.PROXYIP)) : "（未配置）"],
+    ["出站模式/EGRESS_MODE", env.出站模式 || env.EGRESS_MODE || "auto"],
     ["URL", env.URL || "nginx"],
     ["PATH", env.PATH || "/"],
     ["GO2SOCKS5", env.GO2SOCKS5 || "（未配置）"],
-    ["DEBUG", env.DEBUG ? "已开启" : "关闭"],
-    ["BEST_SUB", env.BEST_SUB ? "已开启" : "关闭"],
+    ["DEBUG", env.DEBUG ? "开启" : "关闭"],
+    ["BEST_SUB", env.BEST_SUB ? "开启" : "关闭"],
+    ["PRELOAD_RACE_DIAL", env.PRELOAD_RACE_DIAL ? "开启" : "关闭"],
     ["PROXY_CONCURRENT_DIAL", env.PROXY_CONCURRENT_DIAL || "1"],
     ["TCP_CONCURRENT_DIAL", env.TCP_CONCURRENT_DIAL || "2"]
-  ];
-  const 只读env行 = 只读env字段.map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join("");
-  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配置管理 - edgetunnel</title><style>
-*{box-sizing:border-box}body{font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#0f1420;color:#e6e8ee}
-.wrap{max-width:960px;margin:0 auto;padding:24px}h1{font-size:20px;margin:0 0 4px}h1 small{font-size:13px;color:#8b93a7;font-weight:400}
-.sub{color:#8b93a7;font-size:13px;margin:0 0 20px}.card{background:#1a2130;border:1px solid #2a3346;border-radius:10px;padding:16px;margin-bottom:16px}
-.card h2{font-size:15px;margin:0 0 12px;color:#c9d2e3}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-textarea{width:100%;height:360px;background:#0f1420;color:#d8e0ee;border:1px solid #2a3346;border-radius:8px;padding:10px;font:12px/1.5 monospace;resize:vertical}
-table{width:100%;border-collapse:collapse;font-size:13px}td{overflow-wrap:anywhere;padding:6px 8px;border-bottom:1px solid #232c3e}td.mn{width:220px;color:#8b93a7}
-button{min-height:44px;background:#2f81f7;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer}button:hover{background:#1f6bd6}
-a{color:#8abaff}button.ghost{background:#2a3346}.tag{font-size:12px;color:#6fd18a}
-#status{margin-left:10px;font-size:13px;color:#8b93a7;word-break:break-all}</style></head><body><div class="wrap">
-<h1>配置管理 <small>路径优先级：path 参数 &gt; KV(cfg:{host}) &gt; env &gt; 默认值</small></h1>
-<p class="sub">编辑下方 JSON 并保存，即写入当前访问域名的 KV 全量配置（<code>cfg:{host}</code>）；保存后清除本地缓存；其他地区可能需要 60 秒或更久传播。留空/缺键回退到环境变量与默认值。</p>
-<div class="card"><h2>订阅与日志</h2><p><a href="/sub?token=${encodeURIComponent(config_JSON.优选订阅生成.TOKEN)}">通用订阅</a> · <a href="/sub?token=${encodeURIComponent(config_JSON.优选订阅生成.TOKEN)}&amp;target=clash&amp;native=1">Clash 原生订阅</a> · <a href="/sub?token=${encodeURIComponent(config_JSON.优选订阅生成.TOKEN)}&amp;target=singbox&amp;native=1">sing-box 原生订阅</a> · <a href="/logout">退出登录</a></p><p>原生订阅为最小配置，不包含自定义分流规则。访问日志请在 Cloudflare Workers Logs 查看。</p></div>
-<div class="card"><div class="row"><h2>KV 全量配置（可编辑）</h2><div><button onclick="saveCfg()">保存到 KV</button> <button class="ghost" onclick="restoreCfg()">恢复上一版本</button><span id="status" role="status" aria-live="polite"></span></div></div>
-<label for="cfg">当前配置 JSON</label><textarea id="cfg" spellcheck="false" placeholder="正在加载当前生效配置…"></textarea></div>
-<div class="card"><h2>环境变量（只读）<span class="tag">亮起优先于默认值，KV 配置优先于 env</span></h2><table>${只读env行}</table></div>
-</div><script>
-async function loadCfg(){try{const r=await fetch('/admin/config.json');if(!r.ok)throw new Error('HTTP '+r.status);const cfg=await r.json();document.getElementById('cfg').value=JSON.stringify(cfg,null,2);d('已加载当前生效配置（KV>env>默认值）');}catch(e){document.getElementById('cfg').placeholder='加载失败：'+e.message;}}
-async function saveCfg(){d('正在保存…');try{const el=document.getElementById('cfg');let obj;try{obj=JSON.parse(el.value);}catch(e){d('JSON 解析失败：'+e.message);return;}const r=await fetch('/admin/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});let res={};try{res=await r.json();}catch(_){}d(r.ok?('保存成功：'+ (res.message||'')):('保存失败：'+JSON.stringify(res)));}catch(e){d('保存失败：'+e.message);}}
-async function restoreCfg(){try{const r=await fetch('/admin/config/restore',{method:'POST'});if(!r.ok)throw new Error(await r.text());d('已提交恢复，请稍后刷新配置');}catch(e){d('恢复失败：'+e.message);}}
-function d(m){const s=document.getElementById('status');s.textContent=m;}
-loadCfg();
-</script></body></html>`;
+  ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join("");
+  return `<!DOCTYPE html>
+<html lang="zh-CN" data-theme="glass">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>edgetunnel 管理面板 · ${sse}</title>
+<style>${CSS}</style>
+</head>
+<body>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="kbd-help" role="dialog" aria-modal="true" aria-label="快捷键">
+  <div class="box">
+    <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
+    <table>
+      <tbody>
+        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
+        <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
+        <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
+        <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="wrap" id="top">
+<header>
+  <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
+  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
+</header>
+<nav>
+  <button type="button" class="on" data-tab="overview">概览</button>
+  <button type="button" data-tab="nodes">节点与订阅</button>
+  <button type="button" data-tab="config">配置</button>
+  <button type="button" data-tab="ops">运维</button>
+</nav>
+
+<section class="page on" data-page="overview">
+  <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
+  <div class="card">
+    <h2>请求用量</h2>
+    <div class="hero">
+      <div class="gauge"><svg viewBox="0 0 120 120" width="120" height="120">
+        <circle cx="60" cy="60" r="50" fill="none" stroke="#2a3346" stroke-width="12"/>
+        <circle id="ubar-fill" cx="60" cy="60" r="50" fill="none" stroke="#2f81f7" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
+        <text id="utext" x="60" y="66" text-anchor="middle" font-size="12" fill="#e6e8ee"></text>
+      </svg></div>
+      <div style="flex:1;min-width:240px">
+        <div class="kvList">
+          <div class="item"><b>协议 / 传输</b>${转义HTML(摘.协议类型)} / ${转义HTML(摘.传输协议)}</div>
+          <div class="item"><b>gRPC 模式</b>${转义HTML(摘.gRPC模式)}</div>
+          <div class="item"><b>Fingerprint</b>${转义HTML(摘.Fingerprint)}</div>
+          <div class="item"><b>路径</b>${转义HTML(摘.path)}</div>
+          <div class="item"><b>出站模式</b>${转义HTML(摘.出站)}</div>
+          <div class="item"><b>反代</b>${转义HTML(摘.反代)}</div>
+          <div class="item"><b>ECH / 0RTT</b>${摘.ECH ? "开" : "关"} / ${摘.启用0RTT ? "开" : "关"}</div>
+          <div class="item"><b>SS</b>${转义HTML(摘.SS.加密方式)} / TLS ${摘.SS.TLS ? "开" : "关"}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="badges" id="badges"></div>
+  <div class="card">
+    <h2>近 30 天用量趋势</h2>
+    <div id="chart"><p class="dim">加载中…</p></div>
+    <div id="chart-tip" role="tooltip"></div>
+  </div>
+  <div class="card">
+    <h2>访问日志</h2>
+    <p class="dim">访问日志不再写入 KV；请在 Cloudflare 控制台 → Workers → 本 Worker → Logs 查看结构化 access 事件（<a href="https://developers.cloudflare.com/workers/observability/logs/" rel="noopener" target="_blank">文档</a>）。</p>
+  </div>
+</section>
+
+<section class="page" data-page="nodes">
+  <div class="card">
+    <h2>主节点</h2>
+    <div class="mono" id="nlink-code"></div>
+    <div class="row">
+      <button type="button" class="btn" id="btn-copy-link">复制链接</button>
+      <button type="button" class="btn ghost" id="btn-copy-sub">复制通用订阅</button>
+      <button type="button" class="btn ghost" id="btn-copy-clash">复制 Clash 原生</button>
+      <button type="button" class="btn ghost" id="btn-copy-singbox">复制 sing-box 原生</button>
+      <button type="button" class="btn ghost" id="btn-open-qr">查看二维码</button>
+    </div>
+    <div class="qr" id="qr" aria-label="节点二维码"></div>
+  </div>
+  <div class="card">
+    <h2>订阅链接</h2>
+    <div class="mono" id="sub-link"></div>
+    <p class="dim">订阅更新周期：每 3 小时提示一次；原生订阅为最小配置（Clash/sing-box），不含自定义分流规则。</p>
+  </div>
+  <div class="card">
+    <h2>客户端格式</h2>
+    <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
+    <div class="row" id="fmt-links"></div>
+  </div>
+  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
+    <div class="box">
+      <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
+      <div id="qr-big"></div>
+      <div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="page" data-page="config">
+  <div class="card">
+    <h2>常用字段</h2>
+    <div class="kvList">
+      <div><label>协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
+      <div><label>传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
+      <div><label>PATH</label><input id="c-PATH" /></div>
+      <div><label>Fingerprint</label><input id="c-Fingerprint" /></div>
+      <div><label>ALPN（空则不生成）</label><input id="c-ALPN" placeholder="h2" /></div>
+      <div><label>TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
+      <div class="row" style="grid-column:1/-1"><label><input id="c-ECH" type="checkbox" /> ECH</label><label><input id="c-启用0RTT" type="checkbox" /> 启用 0RTT</label></div>
+    </div>
+    <div class="row"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
+  </div>
+  <div class="card">
+    <h2>KV 全量配置（JSON）</h2>
+    <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
+    <label for="cfg">当前配置 JSON</label>
+    <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+  </div>
+  <div class="card">
+    <h2>环境变量（只读）</h2>
+    <table><thead><tr><th scope="col" class="mn">变量</th><th scope="col">当前值</th></tr></thead><tbody>${env只读行}</tbody></table>
+  </div>
+</section>
+
+<section class="page" data-page="ops">
+  <div class="card">
+    <h2>诊断信息</h2>
+    <div class="mono" id="diag"></div>
+    <div class="row"><button type="button" class="btn ghost" id="btn-diag-copy">复制诊断 JSON</button><span class="dim" id="diag-note"></span></div>
+    <p class="dim" style="margin-top:10px">登录/写接口受 IP 限流（60 秒）与同源校验保护；会话绑定 UA 与 host，24 小时过期。</p>
+  </div>
+  <div class="card">
+    <h2>Telegram 通知</h2>
+    <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || "")) || "未配置")}" />
+    <label>ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ""))}" />
+    <div class="row"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
+  </div>
+  <div class="card">
+    <h2>Cloudflare API 凭据</h2>
+    <label>AccountID（留空保持不变）</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || "")) || "未配置")}" />
+    <label>APIToken（留空保持不变）</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || "")) || "未配置")}" />
+    <label>Email（备选认证）</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ""))}" />
+    <label>GlobalAPIKey（备选认证）</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || "")) || "未配置")}" />
+    <label>UsageAPI（可选，覆盖自动查询）</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ""))}" />
+    <p class="dim">凭据仅保存在服务端 KV；页面始终掩码展示。留空的字段不会被提交覆盖。</p>
+    <div class="row"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
+  </div>
+  <div class="card">
+    <h2>自定义优选 IP（ADD.txt）</h2>
+    <textarea id="o-add" rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
+    <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
+  </div>
+  <div class="card">
+    <h2>危险区</h2>
+    <div class="row"><button type="button" class="btn" id="btn-init">重置配置为默认值</button><span class="dim">将清空 KV cfg:{host}，恢复默认；请先备份。</span></div>
+  </div>
+</section>
+</div>
+<script>window.__ET__=${JSON.stringify(摘).replace(/</g, "\\u003c")};</script>
+<script>${二维码运行时}</script>
+<script>
+'use strict';
+(function () {
+  var S = window.__ET__;
+  function $(s) { return document.querySelector(s); }
+  function toast(msg, ok) {
+    var t = $('#toast'); t.textContent = msg; t.className = 'show ' + (ok ? 'ok' : 'err');
+    clearTimeout(t._h); t._h = setTimeout(function () { t.className = ''; }, 3200);
+  }
+  function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, function () { toast('复制失败'); }); }
+    else {
+      var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast('已复制'); } catch (e) { toast('复制失败'); }
+      ta.remove();
+    }
+  }
+  function api(path, opts) {
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (j) {
+        if (!r.ok) { var m = (j && (j.error || j.msg)) || ('HTTP ' + r.status); throw new Error(m); }
+        return j;
+      });
+    });
+  }
+  function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : String(n || 0); }
+
+  // 概览增强：实时时钟（Task2）
+  function tickClock() {
+    var d = new Date(), pad = function (v) { return (v < 10 ? '0' : '') + v; };
+    var local = $('#clock-local'); if (local) local.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    var utc = $('#clock-utc'); if (utc) utc.textContent = 'UTC ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+  }
+  setInterval(tickClock, 1000);
+
+  // 概览增强：状态徽章（Task2，textContent 防 XSS）
+  function renderBadges() {
+    var box = $('#badges'); if (!box) return;
+    var rows = [
+      ['协议类型', S.协议类型], ['传输协议', S.传输协议], ['gRPC模式', S.gRPC模式], ['Fingerprint', S.Fingerprint],
+      ['出站', S.出站], ['反代', S.反代], ['ECH', S.ECH ? '开' : '关'], ['启用0RTT', S.启用0RTT ? '开' : '关']
+    ];
+    box.innerHTML = '';
+    rows.forEach(function (p) {
+      var b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = p[0] + ': ' + (p[1] === undefined ? '' : p[1]);
+      box.appendChild(b);
+    });
+  }
+
+  // Tab 切换
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
+  function switchTab(btn) {
+    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); });
+    Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
+    try { localStorage.setItem('et_admin_tab', btn.dataset.tab); } catch (e) {}
+    if (btn.dataset.tab === 'overview') loadOverview();
+    if (btn.dataset.tab === 'config') loadConfig();
+    if (btn.dataset.tab === 'ops') { loadOps(); loadDiag(); }
+    if (btn.dataset.tab === 'nodes') loadNodes();
+  }
+  tabs.forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn); }); });
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
+    if (saved) { var b = document.querySelector('[data-tab="' + saved + '"]'); if (b) switchTab(b); }
+  })();
+
+  // 概览
+  function loadOverview() {
+    var use = S.用量 || {}, max = use.max || 1, total = use.total || 0;
+    var c = $('#ubar-fill'); if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, total / max)));
+    var t = $('#utext'); if (t) t.textContent = fmt(total) + ' / ' + fmt(max) + ' ' + ((total / max) * 100).toFixed(1) + '%';
+    api('/admin/api/usage-history').then(function (rows) {
+      var box = $('#chart'); if (!box) return;
+      if (!rows || !rows.length) { box.innerHTML = '<p class="dim">暂无历史数据（下次用量刷新后写入）</p>'; return; }
+      var W = 640, H = 180, pad = 24;
+      var maxV = rows.reduce(function (m, r) { return Math.max(m, r.total || 0); }, 1);
+      var bw = (W - pad * 2) / rows.length, bars = '', ticks = '';
+      rows.forEach(function (r, i) {
+        var h = Math.max(2, ((r.total || 0) / maxV) * (H - pad * 2));
+        var x = pad + i * bw, y = H - pad - h;
+        bars += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(2, bw - 3) + '" height="' + h + '" rx="2" fill="#6e8bff" data-date="' + (r.date || '') + '" data-val="' + (r.total || 0) + '"></rect>';
+        if (i % 5 === 0) ticks += '<text x="' + (x + bw / 2) + '" y="' + (H - 6) + '" font-size="9" fill="#8b93a7" text-anchor="middle">' + (r.date || '').slice(5) + '</text>';
+      });
+      box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
+      bindBarTips(box.querySelector('svg'));
+    }).catch(function (e) { var box = $('#chart'); if (box) box.innerHTML = '<p class="dim">用量历史不可用：' + e.message + '</p>'; });
+  }
+
+  // 概览增强：趋势图 hover tooltip（Task2）
+  function bindBarTips(svg) {
+    if (!svg) return;
+    var tip = $('#chart-tip'); if (!tip) return;
+    Array.prototype.slice.call(svg.querySelectorAll('rect[data-date]')).forEach(function (rect) {
+      rect.addEventListener('mousemove', function (ev) {
+        var rc = svg.getBoundingClientRect();
+        tip.textContent = rect.getAttribute('data-date') + ': ' + fmt(Number(rect.getAttribute('data-val')));
+        tip.style.display = 'block';
+        tip.style.left = (ev.clientX - rc.left + 12) + 'px';
+        tip.style.top = (ev.clientY - rc.top - 30) + 'px';
+      });
+      rect.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+    });
+  }
+
+  // 节点与订阅
+  function loadNodes() {
+    $('#nlink-code').textContent = S.link || '';
+    $('#sub-link').textContent = 'https://' + S.host + '/sub?token=' + S.token;
+    var qr = $('#qr'), big = $('#qr-big');
+    try {
+      qr.innerHTML = window.QRCode.generateSVG(S.link || 'no-link');
+      qr.onclick = openQR; qr.style.cursor = 'pointer'; qr.title = '点击放大';
+      if (big) big.innerHTML = window.QRCode.generateSVG(S.link || 'no-link', 4);
+    } catch (e) { qr.innerHTML = '<p class="dim">二维码生成失败：' + e.message + '</p>'; }
+    var fmts = [['clash', 'Clash'], ['singbox', 'sing-box'], ['surge', 'Surge'], ['loon', 'Loon'], ['quanx', 'Quantumult X'], ['v2rayn', 'v2rayN'], ['shadowrocket', 'Shadowrocket']];
+    $('#fmt-links').innerHTML = fmts.map(function (f) {
+      return '<button type="button" class="btn ghost" data-fmt="' + f[0] + '">' + f[1] + '</button>';
+    }).join('');
+    Array.prototype.slice.call(document.querySelectorAll('[data-fmt]')).forEach(function (b) {
+      b.addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=' + b.dataset.fmt); });
+    });
+  }
+  function openQR() { var m = $('#qr-modal'); if (m) m.classList.add('open'); }
+  function closeQR() { var m = $('#qr-modal'); if (m) m.classList.remove('open'); }
+  var _qrClose = document.getElementById('btn-qr-close');
+  if (_qrClose) _qrClose.addEventListener('click', closeQR);
+  var _qrModal = document.getElementById('qr-modal');
+  if (_qrModal) _qrModal.addEventListener('click', function (e) { if (e.target === this) closeQR(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQR(); });
+  var _btnDl = document.getElementById('btn-qr-download');
+  if (_btnDl) _btnDl.addEventListener('click', function () {
+    var svg = document.querySelector('#qr-big svg');
+    if (!svg) { toast('二维码未生成', false); return; }
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = Math.max(img.width || 180, 180) * 4; c.height = Math.max(img.height || 180, 180) * 4;
+      var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(img, 0, 0, c.width, c.height);
+      try {
+        var a = document.createElement('a'); a.download = 'edgetunnel-qr.png'; a.href = c.toDataURL('image/png');
+        document.body.appendChild(a); a.click(); a.remove(); toast('二维码已下载', true);
+      } catch (e2) { toast('下载失败：' + e2.message, false); }
+    };
+    img.onerror = function () { toast('二维码渲染失败', false); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  });
+  $('#btn-open-qr').addEventListener('click', openQR);
+  $('#btn-copy-link').addEventListener('click', function () { copy(S.link || ''); });
+  $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
+  $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
+  $('#btn-copy-singbox').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=singbox&native=1'); });
+
+  // 配置
+  function loadConfig() {
+    api('/admin/config.json').then(function (cfg) {
+      $('#cfg').value = JSON.stringify(cfg, null, 2);
+      var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
+      var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
+      $('#c-PATH').value = cfg.PATH || '';
+      $('#c-Fingerprint').value = cfg.Fingerprint || '';
+      $('#c-ALPN').value = cfg.ALPN || '';
+      var ts = cfg.TLS分片; $('#c-TLS分片').value = (ts === 'Shadowrocket' || ts === 'Happ') ? ts : '';
+      $('#c-ECH').checked = !!cfg.ECH;
+      $('#c-启用0RTT').checked = !!cfg.启用0RTT;
+    }).catch(function (e) { statusCfg('加载失败：' + e.message); });
+  }
+  function statusCfg(m) { var s = $('#cfg-status'); if (s) s.textContent = m; }
+  $('#btn-load-json').addEventListener('click', function () { loadConfig(); statusCfg(''); });
+  $('#btn-save-json').addEventListener('click', function () {
+    var obj; try { obj = JSON.parse($('#cfg').value); } catch (e) { statusCfg('JSON 解析失败：' + e.message); return; }
+    statusCfg('正在保存…');
+    api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) })
+      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); })
+      .catch(function (e) { statusCfg('保存失败：' + e.message); });
+  });
+  $('#btn-restore').addEventListener('click', function () {
+    if (!confirm('恢复上一版本将覆盖当前配置，继续？')) return;
+    api('/admin/config/restore', { method: 'POST' }).then(function (r) { statusCfg('已提交：' + (r.message || '')); }).catch(function (e) { statusCfg('恢复失败：' + e.message); });
+  });
+  $('#btn-save-ess').addEventListener('click', function () {
+    api('/admin/config.json').then(function (cfg) {
+      cfg.协议类型 = $('#c-协议类型').value; cfg.传输协议 = $('#c-传输协议').value;
+      cfg.PATH = $('#c-PATH').value; cfg.Fingerprint = $('#c-Fingerprint').value;
+      cfg.ALPN = $('#c-ALPN').value || '';
+      cfg.TLS分片 = $('#c-TLS分片').value || null;
+      cfg.ECH = $('#c-ECH').checked; cfg.启用0RTT = $('#c-启用0RTT').checked;
+      return api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    }).then(function (r) { toast('常用字段已保存', true); statusCfg('已保存：' + (r.message || '')); })
+      .catch(function (e) { toast('保存失败：' + e.message, false); });
+  });
+
+  // 运维
+  function loadOps() {
+    api('/admin/ADD.txt').then(function (t) { if (typeof t === 'string') $('#o-add').value = t; })
+      .catch(function () { $('#o-add').placeholder = '加载失败'; });
+  }
+  $('#btn-save-tg').addEventListener('click', function () {
+    var body = { BotToken: $('#o-tg-bot').value.trim(), ChatID: $('#o-tg-chat').value.trim() };
+    if (!body.BotToken && !body.ChatID) { toast('至少填写 BotToken 或 ChatID', false); return; }
+    api('/admin/tg.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { toast('TG 已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
+  });
+  $('#btn-save-cf').addEventListener('click', function () {
+    var body = { AccountID: $('#o-cf-account').value.trim(), APIToken: $('#o-cf-token').value.trim(), Email: $('#o-cf-email').value.trim(), GlobalAPIKey: $('#o-cf-gkey').value.trim(), UsageAPI: $('#o-cf-usageapi').value.trim() };
+    api('/admin/cf.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { toast('CF 凭据已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
+  });
+  $('#btn-refresh-usage').addEventListener('click', function () {
+    api('/admin/getCloudflareUsage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function (r) { toast('用量结果：' + fmt(r.total) + ' / ' + fmt(r.max), true); })
+      .catch(function (e) { toast('刷新失败：' + e.message, false); });
+  });
+  $('#btn-save-add').addEventListener('click', function () {
+    fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: $('#o-add').value })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (r) { toast(r.message || '已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
+  });
+  $('#btn-init').addEventListener('click', function () {
+    if (!confirm('确认将配置重置为默认值？此操作不可撤销。')) return;
+    api('/admin/init', { method: 'POST' }).then(function (r) { toast('配置已重置', true); loadConfig(); }).catch(function (e) { toast('重置失败：' + e.message, false); });
+  });
+
+  // 诊断信息
+  function loadDiag() {
+    api('/admin/config.json').then(function (cfg) {
+      var d = {
+        host: S.host, uuid: S.link ? (S.link.split('://')[1] || '').split('@')[0] : '',
+        协议: (S.协议类型 || '') + '/' + (S.传输协议 || ''), 出站: S.出站 || '', path: S.path || '',
+        Version: cfg.Version || '', UA: navigator.userAgent, generatedAt: new Date().toISOString()
+      };
+      $('#diag').textContent = JSON.stringify(d, null, 2);
+      var note = $('#diag-note'); if (note) note.textContent = '版本 ' + (cfg.Version || '未知');
+    }).catch(function (e) { $('#diag').textContent = '诊断数据加载失败：' + e.message; });
+  }
+  $('#btn-diag-copy').addEventListener('click', function () { copy($('#diag').textContent || ''); });
+
+  // JSON 导出 / 导入
+  $('#btn-cfg-export').addEventListener('click', function () {
+    if (!$('#cfg').value) { toast('先点击「重新加载」获取配置', false); return; }
+    copy($('#cfg').value);
+  });
+  $('#btn-cfg-import').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) { toast('浏览器不支持剪贴板读取', false); return; }
+    navigator.clipboard.readText().then(function (t) {
+      var v;
+      try { v = JSON.stringify(JSON.parse(t), null, 2); } catch (e) { toast('剪贴板内容不是合法 JSON', false); return; }
+      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存');
+    }).catch(function () { toast('无法读取剪贴板', false); });
+  });
+
+  // 快捷键
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var tag = (document.activeElement || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'Escape') { closeQR(); var h = $('#kbd-help'); if (h) h.classList.remove('open'); return; }
+    var map = { '1': 'overview', '2': 'nodes', '3': 'config', '4': 'ops' };
+    if (map[e.key]) { var b = document.querySelector('[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
+    else if (e.key === 'c' || e.key === 'C') { var l = $('#btn-copy-link'); if (l) l.click(); }
+    else if (e.key === 'r' || e.key === 'R') { var u = $('#btn-refresh-usage'); if (u) u.click(); }
+    else if (e.key === '?') { var h2 = $('#kbd-help'); if (h2) h2.classList.toggle('open'); }
+  });
+  var _kbdClose = document.getElementById('btn-kbd-close');
+  if (_kbdClose) _kbdClose.addEventListener('click', function () { $('#kbd-help').classList.remove('open'); });
+  var _kbd = document.getElementById('kbd-help');
+  if (_kbd) _kbd.addEventListener('click', function (e) { if (e.target === this) this.classList.remove('open'); });
+
+  // 回到页面自动刷新用量；header 刷新
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') loadOverview();
+  });
+  $('#btn-refresh-top').addEventListener('click', function () { loadOverview(); loadNodes(); loadDiag(); toast('已刷新', true); });
+  loadDiag();
+
+  renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
+})();
+</script>
+</body>
+</html>`;
 }
 
 // src/config/cache.js
@@ -625,6 +1355,44 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
     console.error("获取使用量错误:", error.message);
     return { success: false, pages: 0, workers: 0, total: 0, max: 1e5 };
   }
+}
+
+// src/services/usage-history.js
+var 历史键 = (host) => "usage:" + host;
+function 今日日期() {
+  const d = /* @__PURE__ */ new Date();
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+}
+async function 读取用量历史(env, host) {
+  if (!env?.KV || !host) return [];
+  try {
+    const raw = await env.KV.get(历史键(host));
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+async function 写入用量快照(env, host, usage) {
+  if (!env?.KV || !host) return;
+  const date = 今日日期();
+  const total = usage?.total ?? 0;
+  const max = usage?.max ?? 0;
+  const workers = usage?.workers ?? 0;
+  const pages = usage?.pages ?? 0;
+  const rows = await 读取用量历史(env, host);
+  const last = rows[rows.length - 1];
+  if (last && last.date === date) {
+    last.pages = pages;
+    last.workers = workers;
+    last.total = total;
+    last.max = max;
+    last.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  } else {
+    rows.push({ date, pages, workers, total, max, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    if (rows.length > 30) rows.splice(0, rows.length - 30);
+  }
+  await env.KV.put(历史键(host), JSON.stringify(rows));
 }
 
 // src/config/index.js
@@ -876,6 +1644,8 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
         当前请求配置().ctx.waitUntil((async () => {
           try {
             entry.value = CF_JSON.UsageAPI ? await (await fetch(CF_JSON.UsageAPI, { signal: AbortSignal.timeout(8e3) })).json() : await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
+            if (entry.value?.total != null) await 写入用量快照(env, host, entry.value).catch(() => {
+            });
           } catch {
             console.error(JSON.stringify({ event: "usage_refresh_failed" }));
           } finally {
@@ -6410,11 +7180,13 @@ async function 处理请求(request, env, ctx, 配置) {
         } else if (访问路径 === "admin/cf.json") {
           return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/config") {
-          return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
+          return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
+        } else if (区分大小写访问路径 === "admin/api/usage-history") {
+          return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         }
         ctx.waitUntil(请求日志记录(env, request, 访问IP, "Admin_Login", config_JSON));
         if (env.REMOTE_ADMIN === "true") return fetch(Pages静态页面 + "/admin" + url.search, { signal: AbortSignal.timeout(8e3) });
-        return new Response(管理面板配置页HTML(env, config_JSON), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
+        return new Response(管理面板HTML(env, config_JSON), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
       } else if (访问路径 === "logout" || uuidRegex.test(访问路径)) {
         const 响应 = new Response("重定向中...", { status: 302, headers: { "Location": "/login" } });
         响应.headers.set("Set-Cookie", "auth=; Path=/; Max-Age=0; HttpOnly");

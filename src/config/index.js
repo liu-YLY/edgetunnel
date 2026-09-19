@@ -7,6 +7,7 @@ import { 掩码敏感信息 } from '../core/html.js';
 import { 获取传输协议配置, 获取传输路径参数值 } from '../core/options.js';
 import { 整理成数组, 识别运营商 } from '../core/strings.js';
 import { getCloudflareUsage } from '../services/usage.js';
+import { 写入用量快照 } from '../services/usage-history.js';
 // auto 仅连接原始目标；不将 Cloudflare 地址当成通用代理出口。
 const 官方直连地址池 = Object.freeze([]); // 兼容旧配置字段，禁止内置候选
 const 官方直连端口 = 443;
@@ -272,6 +273,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
                     try {
                         entry.value = CF_JSON.UsageAPI ? await (await fetch(CF_JSON.UsageAPI, { signal:AbortSignal.timeout(8000) })).json()
                             : await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
+                        if (entry.value?.total != null) await 写入用量快照(env, host, entry.value).catch(() => {});
                     } catch { console.error(JSON.stringify({ event:'usage_refresh_failed' })); }
                     finally { entry.pending = false; entry.time = Date.now(); }
                 })());
