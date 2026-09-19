@@ -20,7 +20,9 @@
 ## 验收记录（2026-09-19 更新）
 
 - [x] 本地 workerd（miniflare）已验：gRPC VLESS/Trojan 双向回环、XHTTP VLESS/Trojan 双向回环、gRPC 突发 64KB×8 任意 3 字节分帧回环（scripts/test-grpc-xhttp.cjs，`npm run test:proto`）。
+- [x] 生产部署与首轮边缘验收（2026-09-19，Worker `edgetunnel`，入口 `edt2.liuyong.eu.org`）：/login 200、/admin 302、/version 命中现网 UUID、登录会话 + /admin/config.json KV 全量读取正常、/admin/probe 端点功能正常（非 CF 目标如 8.8.8.8:53 可达 3ms；黑洞 IP 按时 clamp 超时）。ADMIN/KEY/UUID 已由 plain_text 变量迁移为 secret_text（P0 整改达成）。
 - [ ] 外部验收（需 staging 环境与 CF 凭据，本沙箱不可自验，不假报通过）：真实 CF 边缘 gRPC/XHTTP 各 1 小时长连接；证书过期/主机名错误矩阵；慢消费者与总体内存观测；长期压力。
+- [ ] 已知平台限制：Cloudflare 自有 IP 段（1.1.1.1/1.0.0.1/104.16.x 等）会被 workerd 拒绝 raw TCP 连接——面板测速对该类目标恒报不可达（预期行为），"优选 CF IP 测速"需改用客户端侧测速（v2rayN 等）或仅用于非 CF 目标（第三方反代/独立 IP）。
 
 ### Phase C 决策（2026-09-19，M2-P2 传输纵深）
 
