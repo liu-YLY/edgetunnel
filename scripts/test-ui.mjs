@@ -66,6 +66,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
+  // 4) 命令面板
+  for (const 标记 of ['id="cmdk"', 'id="cmd-input"', 'id="cmd-list"', 'id="cmd-empty"']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
 })().catch((e) => { console.error('[test-ui] FAIL:', e); process.exit(1); });

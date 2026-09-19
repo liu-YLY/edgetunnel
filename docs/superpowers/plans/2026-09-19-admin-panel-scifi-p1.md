@@ -641,7 +641,7 @@ function 命令面板() {
     { 名: '运维：重置配置为默认值', 组: '运维', 跑: function () { 点('#btn-init'); } },
     { 名: '切换主题', 组: '外观', 跑: function () { 设置主题(); } },
     { 名: '切换动效档位', 组: '外观', 跑: function () { 设置动效(); } },
-    { 名: '打开快捷键帮助', 组: '外观', 跑: function () { 点('#kbd-help') || 打开弹层($('#kbd-help')); } },
+    { 名: '打开快捷键帮助', 组: '外观', 跑: function () { 打开弹层($('#kbd-help')); } },
     { 名: '打开 Workers 日志控制台', 组: '外观', 跑: function () { window.open('https://dash.cloudflare.com/?to=/:account/workers/services/edit/edgetunnel/production/logs', '_blank', 'noopener'); } },
   ];
   function 点(sel) { var el = document.querySelector(sel); if (el) el.click(); return !!el; }
@@ -729,6 +729,11 @@ function 命令面板() {
 ```
 同时把既有的 `closeQR()`、`#btn-kbd-close`、遮罩点击绑定改为调用 `关闭弹层(...)`，并把「打开二维码」改为 `打开弹层($('#qr-modal'))`；快捷键帮助里的文案加上 `⌘K` 一行。
 
+**另外必须处理的两个既有遗留**（否则 Esc 会被处理两次、且关闭后不归还焦点）：
+
+1. `client.js` 里 L136 附近那条独立监听 `document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQR(); });` —— **整条删除**，Esc 统一交给上面改好的快捷键监听里的 `关所有弹层()`。
+2. `#qr-modal` 的遮罩点击绑定（`if (e.target === this) closeQR();`）改为 `关闭弹层($('#qr-modal'))`；`#kbd-help` 的遮罩点击同样改为 `关闭弹层($('#kbd-help'))`。
+
 - [ ] **Step 4: 跑测试 + 构建校验**
 
 Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs && npm run build && npm run check`
@@ -746,7 +751,8 @@ git commit -m "feat(admin): 命令面板（⌘/Ctrl+K，含全部内置动作与
 ### Task 5: 配置编辑器增强（内联校验 / diff 预览 / 草稿 / 撤销重做）
 
 **Files:**
-- Modify: `src/admin/ui/index.js`（`配置Tab` 外层加校验区与 diff 浮层）
+- Modify: `src/admin/ui/index.js`（新增并注入 `差异浮层()`）
+- Modify: `src/admin/ui/tabs/config.js`（在 JSON 卡片的 `<textarea id="cfg">` 之后插入 `<div id="cfg-check" role="status" aria-live="polite"></div>`）
 - Modify: `src/admin/ui/client.js`
 - Test: `scripts/test-ui.mjs`
 
@@ -912,6 +918,8 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
 
 **Files:**
 - Modify: `src/admin/ui/client.js`
+- Modify: `src/admin/ui/tabs/overview.js`（趋势图卡片容器加 `data-skeleton` + 骨架条）
+- Modify: `src/admin/ui/tabs/ops.js`（`#diag` 上方加 `data-skeleton` + 骨架条）
 - Test: `scripts/test-ui.mjs`
 
 - [ ] **Step 1: 加断言**
