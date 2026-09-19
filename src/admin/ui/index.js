@@ -10,6 +10,7 @@ import { 概览Tab } from './tabs/overview.js';
 import { 节点Tab } from './tabs/nodes.js';
 import { 配置Tab } from './tabs/config.js';
 import { 运维Tab } from './tabs/ops.js';
+import { 自检Tab } from './tabs/check.js';
 
 // 面板渲染入口：env（只读 env 展示/出站模式推导）+ config_JSON（生效配置，含掩码凭据）
 function 管理面板HTML(env, config_JSON) {
@@ -72,6 +73,7 @@ ${页头(sse)}
 ${主导航()}
 ${概览Tab(摘)}
 ${节点Tab()}
+${自检Tab()}
 ${配置Tab(摘, env只读行)}
 ${运维Tab(摘)}
 </div>
@@ -88,7 +90,7 @@ function 快捷键帮助浮层() {
     <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
     <table>
       <tbody>
-        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
+        <tr><td><kbd>1</kbd>−<kbd>5</kbd></td><td>切换 Tab（概览/节点/自检/配置/运维）</td></tr>
         <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
         <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
         <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
@@ -134,6 +136,7 @@ function 主导航() {
   return `<nav role="tablist" aria-label="面板分区">
   <button type="button" class="on" role="tab" aria-selected="true" aria-controls="page-overview" data-tab="overview">概览</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-nodes" data-tab="nodes">节点与订阅</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-check" data-tab="check">自检</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-config" data-tab="config">配置</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-ops" data-tab="ops">运维</button>
 </nav>`;

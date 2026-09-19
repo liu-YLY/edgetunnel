@@ -169,4 +169,79 @@ async function 有限代理握手(action, connector, timeoutMs = 10000) {
 function socks5Connect(host, port, data, connector, proxy) { return 有限代理握手(c => socks5ConnectRaw(host, port, data, c, proxy), connector); }
 function httpConnect(host, port, data, tls, connector, proxy) { return 有限代理握手(c => httpConnectRaw(host, port, data, tls, c, proxy), connector); }
 
-export { httpConnect, isSpeedTestSite, socks5Connect, 创建请求TCP连接器, 有限代理握手, 构造WS本地204响应, 构造本地204响应 };
+///////////////////////////////////////////////////////自检/诊断采样原语（socket 属主在本文件）///////////////////////////////////////////////
+
+// 解析 "host:port" 形式的反代 PROXYIP（支持 [ipv6]:port、无端口时默认 80）。
+function 解析反代地址(候选) {
+	const 字符串 = String(候选 || '').trim();
+	if (!字符串) return null;
+	let hostname = 字符串, port = 80;
+	if (字符串.startsWith('[')) {
+		const 闭合 = 字符串.indexOf(']');
+		if (闭合 === -1) return null;
+		hostname = 字符串.slice(1, 闭合);
+		const 剩余 = 字符串.slice(闭合 + 1);
+		if (剩余.startsWith(':')) port = parseInt(剩余.slice(1), 10);
+	} else {
+		const 冒号 = 字符串.lastIndexOf(':');
+		if (冒号 > -1 && /^\d+$/.test(字符串.slice(冒号 + 1))) {
+			hostname = 字符串.slice(0, 冒号);
+			port = parseInt(字符串.slice(冒号 + 1), 10);
+		}
+	}
+	if (!hostname) return null;
+	return { hostname, port: port || 80 };
+}
+
+// 连接复用命中率：对同一 host:port 连续 connect×N，统计从第2轮起的复用命中。
+// 命中判定：后续轮耗时 < 首轮×0.6；首轮即超时（本地无出口）时命中拿 0/n-1。
+async function 连接复用采样(hostname = 'example.com', port = 443, 次数 = 6) {
+	const times = [];
+	for (let i = 0; i < 次数; i++) {
+		const 起始 = Date.now();
+		let socket;
+		try {
+			socket = cloudflareConnect({ hostname, port }, { secureTransport: 'on', allowHalfOpen: false });
+			await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3000))]);
+		} catch (error) { /* 吞掉建连异常，计入耗时 */ }
+		times.push(Date.now() - 起始);
+		try { socket?.close?.(); } catch (error) { /* 吞掉关闭错误 */ }
+	}
+	const 首轮 = times[0];
+	let hits = 0;
+	if (首轮 < 3000) hits = times.slice(1).filter((t) => t < 首轮 * 0.6).length;
+	return { hits: hits + '/' + (次数 - 1), times };
+}
+
+// 黑洞地址实测握手耗时：验证超时预算是否按预期触发释放。
+async function 黑洞超时采样(预算ms = 6000) {
+	const 起始 = Date.now();
+	let socket;
+	try {
+		socket = cloudflareConnect({ hostname: '192.0.2.1', port: 443 });
+		await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 预算ms))]);
+	} catch (error) { /* 吞掉 */ }
+	try { socket?.close?.(); } catch (error) { /* 吞掉 */ }
+	return { ms: Date.now() - 起始, 预算: 预算ms };
+}
+
+// deep 代理：反代 PROXYIP 建连耗时（未配置返回跳过）。
+async function 代理建连采样(request, env, 配置) {
+	const 候选列表 = [
+		...(env?.PROXYIP ? String(env.PROXYIP).split(/[,，\s]+/).filter(Boolean) : []),
+		...(配置?.反代?.PROXYIP ? String(配置.反代.PROXYIP).split(/[,，\s]+/).filter(Boolean) : []),
+	];
+	const 目标 = 解析反代地址(候选列表[0]);
+	if (!目标) return { ok: true, 跳过: '未配置反代PROXYIP' };
+	const 起始 = Date.now();
+	try {
+		const TCP连接 = 创建请求TCP连接器(request);
+		const socket = TCP连接({ hostname: 目标.hostname, port: 目标.port });
+		await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3000))]);
+		return { ok: true, ms: Date.now() - 起始 };
+	} catch (error) {
+		return { ok: false, ms: Date.now() - 起始, error: String(error?.message || error) };
+	}
+}
+
+export { httpConnect, isSpeedTestSite, socks5Connect, 创建请求TCP连接器, 有限代理握手, 构造WS本地204响应, 构造本地204响应, 连接复用采样, 黑洞超时采样, 代理建连采样 };

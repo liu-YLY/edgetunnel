@@ -28,6 +28,8 @@ function 运维Tab(摘) {
   </div>
   <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>
+    <div class="row" style="align-items:center"><span class="dim" id="o-add-stats"></span><button type="button" class="btn ghost" id="btn-o-test-add">逐个测试（前10条）</button></div>
+    <div class="mono dim" id="o-add-test-out" style="display:none;margin:6px 0"></div>
     <div id="o-add-sk" data-skeleton><div class="sk"></div><div class="sk"></div></div>
     <textarea id="o-add" data-skeleton rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
     <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>

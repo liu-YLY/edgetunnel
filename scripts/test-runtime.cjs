@@ -48,6 +48,17 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   const ssResponse=await call('/?enc=aes-128-gcm',{headers:{Upgrade:'websocket'}});const sws=ssResponse.webSocket;sws.accept();
   const ssdata=await new Promise((resolve,reject)=>{let chunks=Buffer.alloc(0);const timer=setTimeout(()=>reject(new Error('SS timeout')),5000);sws.addEventListener('message',e=>{chunks=Buffer.concat([chunks,Buffer.from(e.data)]);if(chunks.length>=34){const k=sessionKey(chunks.subarray(0,16));const n=open(k,0,chunks.subarray(16,34)).readUInt16BE();if(chunks.length>=34+n+16){clearTimeout(timer);resolve(open(k,1,chunks.subarray(34,34+n+16)));}}});sws.send(ssframe.slice(0,10));sws.send(ssframe.slice(10));});
   assert.equal(ssdata.toString(),'ss-echo');sws.close(1000);
+  // P2 后端自检：/admin/api/self-check（quick 与 deep）与 /admin/api/tcp-check 参数校验。
+  const sc = await call('/admin/api/self-check',{headers:{Cookie:cookie}});assert.equal(sc.status,200);
+  const scBody = await sc.json();assert.ok(scBody && scBody.quick);
+  for (const k of ['国内','国外','cf','ip']) assert.ok(k in scBody.quick,`self-check quick 缺 ${k}`);
+  const scDeep = await call('/admin/api/self-check?deep=1',{headers:{Cookie:cookie}});assert.equal(scDeep.status,200);
+  const scDeepBody = await scDeep.json();assert.ok(scDeepBody && scDeepBody.deep);
+  for (const k of ['复用率','超时预算']) assert.ok(k in scDeepBody.deep,`self-check deep 缺 ${k}`);
+  assert.ok('hits' in scDeepBody.deep['复用率'],'self-check deep 复用率 缺 hits');
+  const tcBad = await call('/admin/api/tcp-check',{headers:{Cookie:cookie}});assert.equal(tcBad.status,400);
+  const tcOk = await call('/admin/api/tcp-check?host=example.com&port=443',{headers:{Cookie:cookie}});assert.equal(tcOk.status,200);
+  assert.ok('ok' in (await tcOk.json()),'tcp-check 缺 ok 字段');
   console.log('[PASS] workerd 登录/鉴权/配置校验/KV 写入/跨站拒绝/分帧 VLESS/Trojan/SS WebSocket→原生 TCP→回传');
  } finally { await mf?.dispose(); for(const s of sockets)s.destroy(); await new Promise(r=>echo.close(r)); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

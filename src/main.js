@@ -6,6 +6,7 @@ import { 失效配置缓存 } from './config/cache.js';
 import { 全局读取配置, 读取config_JSON } from './config/index.js';
 import { 保存配置 } from './config/store.js';
 import { 读取用量历史 } from './services/usage-history.js';
+import { 执行自检 } from './services/self-check.js';
 import { Pages静态页面, Version, 特征码字典 } from './core/constants.js';
 import { log, 请求存储 } from './core/context.js';
 import { base64SecretEncode, 是拦截UA } from './core/options.js';
@@ -28,7 +29,7 @@ import { Singbox订阅配置文件热补丁 } from './subscribe/format-singbox.j
 import { Surge订阅配置文件热补丁 } from './subscribe/format-surge.js';
 import { 生成V2rayN订阅 } from './subscribe/format-v2rayn.js';
 import { 生成节点链接文本, 获取订阅节点列表, 订阅转换器目标, 识别订阅类型 } from './subscribe/nodes.js';
-import { httpConnect, socks5Connect, 创建请求TCP连接器 } from './transport/dial.js';
+import { httpConnect, socks5Connect, 创建请求TCP连接器, 代理建连采样, 连接复用采样, 黑洞超时采样 } from './transport/dial.js';
 import { sstpConnect, turnConnect } from './transport/proxy.js';
 ///////////////////////////////////////////////////////全局常量和工具函数///////////////////////////////////////////////
 
@@ -315,6 +316,41 @@ async function 处理请求(request, env, ctx, 配置) {
 						return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					} else if (区分大小写访问路径 === 'admin/api/usage-history') {// 用量历史（30 天快照）
 						return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+					} else if (区分大小写访问路径 === 'admin/api/self-check') {// 出口连通自检
+						try {
+							const 深度 = url.searchParams.get('deep') === '1';
+							const 结果 = await 执行自检(request, env, 配置, 深度);
+							if (深度) {
+								// socket 采样原语属主在 transport/dial.js（架构守门），由编排层挂入 deep。
+								const [复用率, 超时预算, 代理] = await Promise.all([
+									连接复用采样(), 黑洞超时采样(6000), 代理建连采样(request, env, 配置),
+								]);
+								结果.deep = { ...结果.deep, 复用率, 超时预算, 代理 };
+							}
+							return new Response(JSON.stringify(结果, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
+						} catch (error) {
+							return new Response(JSON.stringify({ error: '自检执行失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						}
+					} else if (区分大小写访问路径 === 'admin/api/tcp-check') {// 目标 TCP 连通性抽测
+						try {
+							const host = url.searchParams.get('host');
+							const port = parseInt(url.searchParams.get('port'), 10);
+							if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+								return new Response(JSON.stringify({ error: 'host 或 port 参数非法' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							}
+							const 起始 = Date.now();
+							try {
+								const TCP连接 = 创建请求TCP连接器(request);
+								const socket = TCP连接({ hostname: host, port });
+								await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3000))]);
+								return new Response(JSON.stringify({ ok: true, ms: Date.now() - 起始 }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							} catch (error) {
+								const 信息 = String(error?.message || error).slice(0, 100);
+								return new Response(JSON.stringify({ ok: false, ms: Date.now() - 起始, error: 信息 }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							}
+						} catch (error) {
+							return new Response(JSON.stringify({ error: 'tcp-check 执行失败' }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						}
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));

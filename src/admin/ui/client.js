@@ -114,6 +114,7 @@ const 客户端脚本 = `
   var 动作表 = [
     { 名: '概览', 组: '切换', 跑: function () { 点('[data-tab="overview"]'); } },
     { 名: '节点与订阅', 组: '切换', 跑: function () { 点('[data-tab="nodes"]'); } },
+    { 名: '自检', 组: '切换', 跑: function () { 点('[data-tab="check"]'); } },
     { 名: '配置', 组: '切换', 跑: function () { 点('[data-tab="config"]'); } },
     { 名: '运维', 组: '切换', 跑: function () { 点('[data-tab="ops"]'); } },
     { 名: '复制主节点链接', 组: '节点', 跑: function () { 点('#btn-copy-link'); } },
@@ -418,6 +419,25 @@ const 客户端脚本 = `
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
   $('#btn-copy-singbox').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=singbox&native=1'); });
+  $('#btn-node-test').addEventListener('click', function () {
+    var proto = $('#n-proto') ? $('#n-proto').value : 'socks5';
+    var uri = $('#n-test-uri') ? $('#n-test-uri').value.trim() : '';
+    var out = $('#n-test-result');
+    if (!uri) { if (out) { out.className = 'pill'; out.textContent = '请填写代理 URI'; } return; }
+    取('/admin/check?' + encodeURIComponent(proto) + '=' + encodeURIComponent(uri))
+      .then(function (r) {
+        var ok = r ? (r.ok !== undefined ? r.ok : !!r.success) : false;
+        var ms = r ? (r.ms != null ? r.ms : r.responseTime) : null;
+        if (ok) {
+          if (out) { out.className = 'pill ok'; out.textContent = '连接成功' + (ms != null ? ' · ' + ms + ' ms' : ''); }
+          toast('代理连接成功', true);
+        } else {
+          if (out) { out.className = 'pill err'; out.textContent = (r && r.error) || '连接失败'; }
+          toast('代理连接失败', false);
+        }
+      })
+      .catch(function (e) { if (out) { out.className = 'pill err'; out.textContent = e.message; } toast('测试失败：' + e.message, false); });
+  });
 
   // 配置
   function loadConfig() {
@@ -459,12 +479,51 @@ const 客户端脚本 = `
   });
 
   // 运维
+  var 优选IP条目 = [];
+  function 解析优选IP(text) {
+    var seen = {}, entry = [], 总行 = 0, 跳过 = 0;
+    String(text == null ? '' : text).split(/\\r?\\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      总行++;
+      var body = line.split('#')[0].trim();
+      if (!body) { 跳过++; return; }
+      var c = body.split(':');
+      var host = c[0].trim(), port = c.length >= 2 ? c.slice(1).join(':').trim() : '443';
+      if (!host || !/^\\d+$/.test(port)) { 跳过++; return; }
+      var key = host + ':' + port;
+      if (seen[key]) return;
+      seen[key] = 1;
+      entry.push({ host: host, port: port });
+    });
+    优选IP条目 = entry;
+    var st = $('#o-add-stats');
+    if (st) st.textContent = '共 ' + 总行 + ' 行 · 去重后 ' + 优选IP条目.length + ' 条 · 样例: ' + entry.slice(0, 3).map(function (e) { return e.host + ':' + e.port; }).join(', ');
+  }
   function loadOps() {
     取文本('/admin/ADD.txt').then(function (t) {
       骨架完毕('#o-add');
       var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
-      if (typeof t === 'string') $('#o-add').value = t;
+      if (typeof t === 'string') { $('#o-add').value = t; 解析优选IP(t); }
     }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
+  }
+  $('#btn-o-test-add').addEventListener('click', function () {
+    var list = 优选IP条目.slice(0, 10);
+    var out = $('#o-add-test-out');
+    if (out) { out.textContent = ''; out.style.display = ''; }
+    if (!list.length) { toast('无可用条目', false); return; }
+    list.forEach(function (e) {
+      取('/admin/api/tcp-check?host=' + encodeURIComponent(e.host) + '&port=' + encodeURIComponent(e.port))
+        .then(function (r) { 追加连通结果(e, r && r.ok, r ? (r.ms != null ? r.ms : '') : '', (r && !r.ok && r.error) || null); })
+        .catch(function (err) { 追加连通结果(e, false, '', err.message || '请求失败'); });
+    });
+  });
+  function 追加连通结果(e, ok, ms, errtext) {
+    var out = $('#o-add-test-out'); if (!out) return;
+    var line;
+    if (ok) line = e.host + ':' + e.port + ' 可达(' + ms + ' ms)';
+    else line = e.host + ':' + e.port + ' 不可达' + (errtext ? ' (' + errtext + ')' : '');
+    out.textContent = out.textContent ? out.textContent + '\\n' + line : line;
   }
   $('#btn-save-tg').addEventListener('click', function () {
     var body = { BotToken: $('#o-tg-bot').value.trim(), ChatID: $('#o-tg-chat').value.trim() };
@@ -491,6 +550,78 @@ const 客户端脚本 = `
     if (!confirm('确认将配置重置为默认值？此操作不可撤销。')) return;
     api('/admin/init', { method: 'POST' }).then(function (r) { toast('配置已重置', true); loadConfig(); }).catch(function (e) { toast('重置失败：' + e.message, false); });
   });
+
+  // —— 自检 Tab（GET /admin/api/self-check，?deep=1 含 deep） ——
+  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['ip', 'ip']];
+  function 渲染自检项(prefix, it) {
+    骨架完毕('#chk-' + prefix + '-detail');
+    var pill = $('#chk-' + prefix + '-pill'), detail = $('#chk-' + prefix + '-detail');
+    if (!it) {
+      if (pill) { pill.className = 'pill err'; pill.textContent = '无数据'; }
+      if (detail) detail.textContent = '未返回自检项';
+      return { ok: false };
+    }
+    if (it.ok) {
+      if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; }
+      if (detail) {
+        if (prefix === 'ip') detail.textContent = (it.ip ? ('IP: ' + it.ip + ' · 地区 ' + (it.地区 || '未知')) : '正常') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
+        else detail.textContent = '耗时 ' + (it.ms != null ? it.ms : '-') + ' ms';
+      }
+    } else {
+      if (pill) { pill.className = 'pill err'; pill.textContent = '异常'; }
+      if (detail) detail.textContent = (it.error || '不可达') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
+    }
+    return { ok: !!it.ok, ms: it.ms || 0 };
+  }
+  function 渲染深度值(deep) {
+    骨架完毕('#chk-deep-detail');
+    var pill = $('#chk-deep-pill'), detail = $('#chk-deep-detail');
+    if (!deep) {
+      if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; }
+      if (detail) detail.textContent = '深度诊断未启用';
+      return;
+    }
+    var bits = [], 坏 = 0, 有 = 0;
+    var 复用 = deep.复用率;
+    if (复用) { 有++; if (String(复用.hits).startsWith('0/')) 坏++; bits.push('复用命中 ' + 复用.hits); }
+    var 预算 = deep.超时预算;
+    if (预算) { 有++; bits.push('黑洞超时 ' + (预算.ms != null ? 预算.ms : '?') + ' ms' + (预算.预算 ? ' / 预算 ' + 预算.预算 : '')); }
+    var 伪装 = deep.伪装页;
+    if (伪装) {
+      if (伪装.跳过) bits.push('伪装页 ' + 伪装.跳过);
+      else { 有++; if (!伪装.ok) 坏++; bits.push('伪装 ' + (伪装.status || '?') + (伪装.headers ? ' ' + (伪装.headers['content-type'] || '') + (伪装.headers.有cfray ? ' · 有 cf-ray' : ' · 无 cf-ray') : '')); }
+    }
+    var 代理 = deep.代理;
+    if (代理) {
+      if (代理.跳过) bits.push('代理 ' + 代理.跳过);
+      else { 有++; if (!代理.ok) 坏++; bits.push('代理 ' + (代理.ms != null ? 代理.ms + ' ms' : '失败') + (代理.ok ? '' : (代理.error ? ' · ' + 代理.error : ' · 不可达'))); }
+    }
+    if (detail) detail.textContent = bits.join(' · ') || '无深度数据';
+    if (!有) { if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; } }
+    else if (坏 > 0) { if (pill) { pill.className = 'pill err'; pill.textContent = '异常 ' + 坏 + ' 项'; } }
+    else { if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; } }
+  }
+  function loadCheck(深度) {
+    自检卡.forEach(function (k) {
+      var pill = $('#chk-' + k[0] + '-pill'); if (pill) { pill.className = 'pill run'; pill.textContent = '检测中'; }
+    });
+    var dp = $('#chk-deep-pill'); if (dp) { dp.className = 'pill run'; dp.textContent = '检测中'; }
+    $('#chk-note').textContent = 深度 ? '深度诊断中（约 8–20 秒）…' : '自检中…';
+    取('/admin/api/self-check' + (深度 ? '?deep=1' : ''))
+      .then(function (d) {
+        var note = $('#chk-note'); if (note) note.textContent = '';
+        var 可达 = 0, 总数 = 0, 总耗时 = 0;
+        自检卡.forEach(function (k) {
+          var r = 渲染自检项(k[0], (d && d.quick) ? d.quick[k[1]] : null);
+          if (r) { 总数++; if (r.ok) 可达++; 总耗时 = Math.max(总耗时, r.ms); }
+        });
+        渲染深度值(深度 && d ? d.deep : null);
+        var sum = $('#chk-summary'); if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 总耗时 ' + 总耗时 + ' ms';
+      })
+      .catch(function (e) { 内联错误('#chk-note', '自检失败：' + e.message, function () { loadCheck(深度); }); });
+  }
+  $('#btn-run-check').addEventListener('click', function () { loadCheck(false); });
+  $('#btn-run-deep').addEventListener('click', function () { loadCheck(true); });
 
   // 诊断信息
   function loadDiag() {
@@ -529,7 +660,7 @@ const 客户端脚本 = `
     var tag = (document.activeElement || {}).tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.key === 'Escape') { 关所有弹层(); return; }
-    var map = { '1': 'overview', '2': 'nodes', '3': 'config', '4': 'ops' };
+    var map = { '1': 'overview', '2': 'nodes', '3': 'check', '4': 'config', '5': 'ops' };
     if (map[e.key]) { 点('[data-tab="' + map[e.key] + '"]'); }
     else if (e.key === 'c' || e.key === 'C') { 点('#btn-copy-link'); }
     else if (e.key === 'r' || e.key === 'R') { 点('#btn-refresh-usage'); }

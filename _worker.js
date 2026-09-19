@@ -643,6 +643,13 @@ td.mn{width:200px;color:var(--mut)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 #toast.ok{border-color:var(--ok);color:var(--ok)}#toast.ok::before{content:"✓ "}
 #toast.err{border-color:var(--err);color:var(--err)}#toast.err::before{content:"✕ "}
+.chk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.chk{min-height:118px;margin:0}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1.6;background:var(--surf)}
+.pill.ok{color:var(--ok);border-color:var(--ok)}
+.pill.err{color:var(--err);border-color:var(--err)}
+.pill.run{color:var(--warn);border-color:var(--warn);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
 @media(max-width:640px){
 .hero{flex-direction:column}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg1) 88%,transparent);justify-content:space-around;border-top:1px solid var(--line)}
@@ -766,6 +773,7 @@ var 客户端脚本 = `
   var 动作表 = [
     { 名: '概览', 组: '切换', 跑: function () { 点('[data-tab="overview"]'); } },
     { 名: '节点与订阅', 组: '切换', 跑: function () { 点('[data-tab="nodes"]'); } },
+    { 名: '自检', 组: '切换', 跑: function () { 点('[data-tab="check"]'); } },
     { 名: '配置', 组: '切换', 跑: function () { 点('[data-tab="config"]'); } },
     { 名: '运维', 组: '切换', 跑: function () { 点('[data-tab="ops"]'); } },
     { 名: '复制主节点链接', 组: '节点', 跑: function () { 点('#btn-copy-link'); } },
@@ -1070,6 +1078,25 @@ var 客户端脚本 = `
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
   $('#btn-copy-singbox').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=singbox&native=1'); });
+  $('#btn-node-test').addEventListener('click', function () {
+    var proto = $('#n-proto') ? $('#n-proto').value : 'socks5';
+    var uri = $('#n-test-uri') ? $('#n-test-uri').value.trim() : '';
+    var out = $('#n-test-result');
+    if (!uri) { if (out) { out.className = 'pill'; out.textContent = '请填写代理 URI'; } return; }
+    取('/admin/check?' + encodeURIComponent(proto) + '=' + encodeURIComponent(uri))
+      .then(function (r) {
+        var ok = r ? (r.ok !== undefined ? r.ok : !!r.success) : false;
+        var ms = r ? (r.ms != null ? r.ms : r.responseTime) : null;
+        if (ok) {
+          if (out) { out.className = 'pill ok'; out.textContent = '连接成功' + (ms != null ? ' · ' + ms + ' ms' : ''); }
+          toast('代理连接成功', true);
+        } else {
+          if (out) { out.className = 'pill err'; out.textContent = (r && r.error) || '连接失败'; }
+          toast('代理连接失败', false);
+        }
+      })
+      .catch(function (e) { if (out) { out.className = 'pill err'; out.textContent = e.message; } toast('测试失败：' + e.message, false); });
+  });
 
   // 配置
   function loadConfig() {
@@ -1111,12 +1138,51 @@ var 客户端脚本 = `
   });
 
   // 运维
+  var 优选IP条目 = [];
+  function 解析优选IP(text) {
+    var seen = {}, entry = [], 总行 = 0, 跳过 = 0;
+    String(text == null ? '' : text).split(/\\r?\\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      总行++;
+      var body = line.split('#')[0].trim();
+      if (!body) { 跳过++; return; }
+      var c = body.split(':');
+      var host = c[0].trim(), port = c.length >= 2 ? c.slice(1).join(':').trim() : '443';
+      if (!host || !/^\\d+$/.test(port)) { 跳过++; return; }
+      var key = host + ':' + port;
+      if (seen[key]) return;
+      seen[key] = 1;
+      entry.push({ host: host, port: port });
+    });
+    优选IP条目 = entry;
+    var st = $('#o-add-stats');
+    if (st) st.textContent = '共 ' + 总行 + ' 行 · 去重后 ' + 优选IP条目.length + ' 条 · 样例: ' + entry.slice(0, 3).map(function (e) { return e.host + ':' + e.port; }).join(', ');
+  }
   function loadOps() {
     取文本('/admin/ADD.txt').then(function (t) {
       骨架完毕('#o-add');
       var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
-      if (typeof t === 'string') $('#o-add').value = t;
+      if (typeof t === 'string') { $('#o-add').value = t; 解析优选IP(t); }
     }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
+  }
+  $('#btn-o-test-add').addEventListener('click', function () {
+    var list = 优选IP条目.slice(0, 10);
+    var out = $('#o-add-test-out');
+    if (out) { out.textContent = ''; out.style.display = ''; }
+    if (!list.length) { toast('无可用条目', false); return; }
+    list.forEach(function (e) {
+      取('/admin/api/tcp-check?host=' + encodeURIComponent(e.host) + '&port=' + encodeURIComponent(e.port))
+        .then(function (r) { 追加连通结果(e, r && r.ok, r ? (r.ms != null ? r.ms : '') : '', (r && !r.ok && r.error) || null); })
+        .catch(function (err) { 追加连通结果(e, false, '', err.message || '请求失败'); });
+    });
+  });
+  function 追加连通结果(e, ok, ms, errtext) {
+    var out = $('#o-add-test-out'); if (!out) return;
+    var line;
+    if (ok) line = e.host + ':' + e.port + ' 可达(' + ms + ' ms)';
+    else line = e.host + ':' + e.port + ' 不可达' + (errtext ? ' (' + errtext + ')' : '');
+    out.textContent = out.textContent ? out.textContent + '\\n' + line : line;
   }
   $('#btn-save-tg').addEventListener('click', function () {
     var body = { BotToken: $('#o-tg-bot').value.trim(), ChatID: $('#o-tg-chat').value.trim() };
@@ -1143,6 +1209,78 @@ var 客户端脚本 = `
     if (!confirm('确认将配置重置为默认值？此操作不可撤销。')) return;
     api('/admin/init', { method: 'POST' }).then(function (r) { toast('配置已重置', true); loadConfig(); }).catch(function (e) { toast('重置失败：' + e.message, false); });
   });
+
+  // —— 自检 Tab（GET /admin/api/self-check，?deep=1 含 deep） ——
+  var 自检卡 = [['cn', '国内'], ['ow', '国外'], ['cf', 'cf'], ['ip', 'ip']];
+  function 渲染自检项(prefix, it) {
+    骨架完毕('#chk-' + prefix + '-detail');
+    var pill = $('#chk-' + prefix + '-pill'), detail = $('#chk-' + prefix + '-detail');
+    if (!it) {
+      if (pill) { pill.className = 'pill err'; pill.textContent = '无数据'; }
+      if (detail) detail.textContent = '未返回自检项';
+      return { ok: false };
+    }
+    if (it.ok) {
+      if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; }
+      if (detail) {
+        if (prefix === 'ip') detail.textContent = (it.ip ? ('IP: ' + it.ip + ' · 地区 ' + (it.地区 || '未知')) : '正常') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
+        else detail.textContent = '耗时 ' + (it.ms != null ? it.ms : '-') + ' ms';
+      }
+    } else {
+      if (pill) { pill.className = 'pill err'; pill.textContent = '异常'; }
+      if (detail) detail.textContent = (it.error || '不可达') + (it.ms != null ? (' · ' + it.ms + ' ms') : '');
+    }
+    return { ok: !!it.ok, ms: it.ms || 0 };
+  }
+  function 渲染深度值(deep) {
+    骨架完毕('#chk-deep-detail');
+    var pill = $('#chk-deep-pill'), detail = $('#chk-deep-detail');
+    if (!deep) {
+      if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; }
+      if (detail) detail.textContent = '深度诊断未启用';
+      return;
+    }
+    var bits = [], 坏 = 0, 有 = 0;
+    var 复用 = deep.复用率;
+    if (复用) { 有++; if (String(复用.hits).startsWith('0/')) 坏++; bits.push('复用命中 ' + 复用.hits); }
+    var 预算 = deep.超时预算;
+    if (预算) { 有++; bits.push('黑洞超时 ' + (预算.ms != null ? 预算.ms : '?') + ' ms' + (预算.预算 ? ' / 预算 ' + 预算.预算 : '')); }
+    var 伪装 = deep.伪装页;
+    if (伪装) {
+      if (伪装.跳过) bits.push('伪装页 ' + 伪装.跳过);
+      else { 有++; if (!伪装.ok) 坏++; bits.push('伪装 ' + (伪装.status || '?') + (伪装.headers ? ' ' + (伪装.headers['content-type'] || '') + (伪装.headers.有cfray ? ' · 有 cf-ray' : ' · 无 cf-ray') : '')); }
+    }
+    var 代理 = deep.代理;
+    if (代理) {
+      if (代理.跳过) bits.push('代理 ' + 代理.跳过);
+      else { 有++; if (!代理.ok) 坏++; bits.push('代理 ' + (代理.ms != null ? 代理.ms + ' ms' : '失败') + (代理.ok ? '' : (代理.error ? ' · ' + 代理.error : ' · 不可达'))); }
+    }
+    if (detail) detail.textContent = bits.join(' · ') || '无深度数据';
+    if (!有) { if (pill) { pill.className = 'pill'; pill.textContent = '未检测'; } }
+    else if (坏 > 0) { if (pill) { pill.className = 'pill err'; pill.textContent = '异常 ' + 坏 + ' 项'; } }
+    else { if (pill) { pill.className = 'pill ok'; pill.textContent = '正常'; } }
+  }
+  function loadCheck(深度) {
+    自检卡.forEach(function (k) {
+      var pill = $('#chk-' + k[0] + '-pill'); if (pill) { pill.className = 'pill run'; pill.textContent = '检测中'; }
+    });
+    var dp = $('#chk-deep-pill'); if (dp) { dp.className = 'pill run'; dp.textContent = '检测中'; }
+    $('#chk-note').textContent = 深度 ? '深度诊断中（约 8–20 秒）…' : '自检中…';
+    取('/admin/api/self-check' + (深度 ? '?deep=1' : ''))
+      .then(function (d) {
+        var note = $('#chk-note'); if (note) note.textContent = '';
+        var 可达 = 0, 总数 = 0, 总耗时 = 0;
+        自检卡.forEach(function (k) {
+          var r = 渲染自检项(k[0], (d && d.quick) ? d.quick[k[1]] : null);
+          if (r) { 总数++; if (r.ok) 可达++; 总耗时 = Math.max(总耗时, r.ms); }
+        });
+        渲染深度值(深度 && d ? d.deep : null);
+        var sum = $('#chk-summary'); if (sum) sum.textContent = '可达 ' + 可达 + '/' + 总数 + ' 目标 · 总耗时 ' + 总耗时 + ' ms';
+      })
+      .catch(function (e) { 内联错误('#chk-note', '自检失败：' + e.message, function () { loadCheck(深度); }); });
+  }
+  $('#btn-run-check').addEventListener('click', function () { loadCheck(false); });
+  $('#btn-run-deep').addEventListener('click', function () { loadCheck(true); });
 
   // 诊断信息
   function loadDiag() {
@@ -1181,7 +1319,7 @@ var 客户端脚本 = `
     var tag = (document.activeElement || {}).tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.key === 'Escape') { 关所有弹层(); return; }
-    var map = { '1': 'overview', '2': 'nodes', '3': 'config', '4': 'ops' };
+    var map = { '1': 'overview', '2': 'nodes', '3': 'check', '4': 'config', '5': 'ops' };
     if (map[e.key]) { 点('[data-tab="' + map[e.key] + '"]'); }
     else if (e.key === 'c' || e.key === 'C') { 点('#btn-copy-link'); }
     else if (e.key === 'r' || e.key === 'R') { 点('#btn-refresh-usage'); }
@@ -1272,6 +1410,22 @@ function 节点Tab() {
     <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
     <div class="row" id="fmt-links"></div>
   </div>
+  <div class="card">
+    <h2>代理连通测试</h2>
+    <div class="row">
+      <select id="n-proto" style="max-width:120px">
+        <option value="socks5" selected>socks5</option>
+        <option value="http">http</option>
+        <option value="https">https</option>
+        <option value="turn">turn</option>
+        <option value="sstp">sstp</option>
+      </select>
+      <input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" style="flex:1;min-width:200px" />
+      <button type="button" class="btn" id="btn-node-test">测试</button>
+      <span class="pill" id="n-test-result">未测试</span>
+    </div>
+    <p class="dim">复用 /admin/check：在 Worker 边缘实际建连，验证代理通道可用性与响应时间。</p>
+  </div>
   <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
     <div class="box">
       <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
@@ -1341,6 +1495,8 @@ function 运维Tab(摘) {
   </div>
   <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>
+    <div class="row" style="align-items:center"><span class="dim" id="o-add-stats"></span><button type="button" class="btn ghost" id="btn-o-test-add">逐个测试（前10条）</button></div>
+    <div class="mono dim" id="o-add-test-out" style="display:none;margin:6px 0"></div>
     <div id="o-add-sk" data-skeleton><div class="sk"></div><div class="sk"></div></div>
     <textarea id="o-add" data-skeleton rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
     <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
@@ -1349,6 +1505,46 @@ function 运维Tab(摘) {
     <h2>危险区</h2>
     <div class="row"><button type="button" class="btn" id="btn-init">重置配置为默认值</button><span class="dim">将清空 KV cfg:{host}，恢复默认；请先备份。</span></div>
   </div>
+</section>`;
+}
+
+// src/admin/ui/tabs/check.js
+function 自检Tab() {
+  return `
+<section class="page" id="page-check" role="tabpanel" data-page="check">
+  <div class="row">
+    <button type="button" class="btn" id="btn-run-check">运行自检</button>
+    <button type="button" class="btn ghost" id="btn-run-deep">深度诊断（约 8–20 秒）</button>
+    <span class="dim" id="chk-note"></span>
+  </div>
+  <div class="chk-grid">
+    <div class="card chk">
+      <h2>国内连通</h2>
+      <span class="pill" id="chk-cn-pill" data-chk="cn">未检测</span>
+      <div class="mono dim" id="chk-cn-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    </div>
+    <div class="card chk">
+      <h2>国外连通</h2>
+      <span class="pill" id="chk-ow-pill" data-chk="ow">未检测</span>
+      <div class="mono dim" id="chk-ow-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    </div>
+    <div class="card chk">
+      <h2>CF CDN</h2>
+      <span class="pill" id="chk-cf-pill" data-chk="cf">未检测</span>
+      <div class="mono dim" id="chk-cf-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    </div>
+    <div class="card chk">
+      <h2>落地IP</h2>
+      <span class="pill" id="chk-ip-pill" data-chk="ip">未检测</span>
+      <div class="mono dim" id="chk-ip-detail" data-skeleton>点击“运行自检”查看<div class="sk"></div></div>
+    </div>
+    <div class="card chk">
+      <h2>通道诊断</h2>
+      <span class="pill" id="chk-deep-pill" data-chk="deep">未检测</span>
+      <div class="mono dim" id="chk-deep-detail" data-skeleton>深度诊断未启用<div class="sk"></div></div>
+    </div>
+  </div>
+  <div class="mono dim" id="chk-summary"></div>
 </section>`;
 }
 
@@ -1418,6 +1614,7 @@ ${页头(sse)}
 ${主导航()}
 ${概览Tab(摘)}
 ${节点Tab()}
+${自检Tab()}
 ${配置Tab(摘, env只读行)}
 ${运维Tab(摘)}
 </div>
@@ -1433,7 +1630,7 @@ function 快捷键帮助浮层() {
     <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
     <table>
       <tbody>
-        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
+        <tr><td><kbd>1</kbd>−<kbd>5</kbd></td><td>切换 Tab（概览/节点/自检/配置/运维）</td></tr>
         <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
         <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
         <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
@@ -1475,6 +1672,7 @@ function 主导航() {
   return `<nav role="tablist" aria-label="面板分区">
   <button type="button" class="on" role="tab" aria-selected="true" aria-controls="page-overview" data-tab="overview">概览</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-nodes" data-tab="nodes">节点与订阅</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="page-check" data-tab="check">自检</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-config" data-tab="config">配置</button>
   <button type="button" role="tab" aria-selected="false" aria-controls="page-ops" data-tab="ops">运维</button>
 </nav>`;
@@ -2098,6 +2296,93 @@ async function 保存配置(env, key, value, reference) {
   return saved;
 }
 
+// src/services/self-check.js
+async function 快捷访达检查(name, url) {
+  const 起始 = Date.now();
+  try {
+    const 响应 = await fetch(url, { signal: AbortSignal.timeout(5e3) });
+    return {
+      name,
+      url,
+      ok: 响应.status >= 200 && 响应.status < 400,
+      status: 响应.status,
+      ms: Date.now() - 起始
+    };
+  } catch (error) {
+    const 是超时 = error?.name === "TimeoutError" || /timeout/i.test(String(error?.message || error));
+    return { name, url, ok: false, status: null, ms: Date.now() - 起始, error: 是超时 ? "timeout" : String(error?.message || error) };
+  }
+}
+async function 落地IP识别() {
+  const 服务 = [
+    {
+      url: "https://ipinfo.io/json",
+      提取(json) {
+        const ip = json?.ip;
+        if (!ip) return null;
+        const 地区 = [json?.country, json?.city].filter(Boolean).join(" ");
+        return { ip, 地区 };
+      }
+    },
+    {
+      url: "https://api.ip.sb/geoip",
+      提取(json) {
+        const ip = json?.ip;
+        if (!ip) return null;
+        const 地区 = [json?.country_name || json?.country].filter(Boolean).join(" ");
+        return { ip, 地区 };
+      }
+    },
+    {
+      url: "https://myip.ipip.net",
+      提取(text) {
+        const 匹配 = String(text).match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        if (!匹配) return null;
+        return { ip: 匹配[1], 地区: "" };
+      }
+    }
+  ];
+  for (const 项 of 服务) {
+    const 起始 = Date.now();
+    try {
+      const 响应 = await fetch(项.url, { signal: AbortSignal.timeout(5e3) });
+      if (!响应.ok) continue;
+      const 内容 = 项.url.includes("ipip.net") ? await 响应.text() : await 响应.json();
+      const 结果 = 项.提取(内容);
+      if (结果) return { ...结果, ok: true, ms: Date.now() - 起始 };
+    } catch (error) {
+    }
+  }
+  return { ok: false, error: "全部 IP 服务不可达" };
+}
+async function 伪装页(配置) {
+  if (!配置?.伪装页URL) return { ok: true, 跳过: "未配置伪装页URL" };
+  try {
+    const 响应 = await fetch(配置.伪装页URL, { signal: AbortSignal.timeout(5e3) });
+    return {
+      ok: true,
+      status: 响应.status,
+      headers: {
+        "content-type": 响应.headers.get("content-type"),
+        server: 响应.headers.get("server"),
+        有cfray: !!响应.headers.get("cf-ray")
+      }
+    };
+  } catch (error) {
+    return { ok: false, status: null, error: String(error?.message || error) };
+  }
+}
+async function 执行自检(request, env, 配置, 深度 = false) {
+  const quick = {};
+  [quick["国内"], quick["国外"], quick["cf"]] = await Promise.all([
+    快捷访达检查("国内", "https://www.baidu.com"),
+    快捷访达检查("国外", "https://www.gstatic.com/generate_204"),
+    快捷访达检查("cf", "https://cp.cloudflare.com/generate_204")
+  ]);
+  quick["ip"] = await 落地IP识别();
+  return { at: (/* @__PURE__ */ new Date()).toISOString(), quick, deep: 深度 ? { 伪装页: await 伪装页(配置) } : null };
+}
+
 // src/protocol/trojan.js
 var 木马文本解码器 = new TextDecoder();
 function 解析木马请求(buffer, passwordPlainText) {
@@ -2443,6 +2728,78 @@ function socks5Connect(host, port, data, connector, proxy) {
 }
 function httpConnect(host, port, data, tls, connector, proxy) {
   return 有限代理握手((c) => httpConnectRaw(host, port, data, tls, c, proxy), connector);
+}
+function 解析反代地址(候选) {
+  const 字符串 = String(候选 || "").trim();
+  if (!字符串) return null;
+  let hostname = 字符串, port = 80;
+  if (字符串.startsWith("[")) {
+    const 闭合 = 字符串.indexOf("]");
+    if (闭合 === -1) return null;
+    hostname = 字符串.slice(1, 闭合);
+    const 剩余 = 字符串.slice(闭合 + 1);
+    if (剩余.startsWith(":")) port = parseInt(剩余.slice(1), 10);
+  } else {
+    const 冒号 = 字符串.lastIndexOf(":");
+    if (冒号 > -1 && /^\d+$/.test(字符串.slice(冒号 + 1))) {
+      hostname = 字符串.slice(0, 冒号);
+      port = parseInt(字符串.slice(冒号 + 1), 10);
+    }
+  }
+  if (!hostname) return null;
+  return { hostname, port: port || 80 };
+}
+async function 连接复用采样(hostname = "example.com", port = 443, 次数 = 6) {
+  const times = [];
+  for (let i = 0; i < 次数; i++) {
+    const 起始 = Date.now();
+    let socket;
+    try {
+      socket = cloudflareConnect({ hostname, port }, { secureTransport: "on", allowHalfOpen: false });
+      await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3e3))]);
+    } catch (error) {
+    }
+    times.push(Date.now() - 起始);
+    try {
+      socket?.close?.();
+    } catch (error) {
+    }
+  }
+  const 首轮 = times[0];
+  let hits = 0;
+  if (首轮 < 3e3) hits = times.slice(1).filter((t) => t < 首轮 * 0.6).length;
+  return { hits: hits + "/" + (次数 - 1), times };
+}
+async function 黑洞超时采样(预算ms = 6e3) {
+  const 起始 = Date.now();
+  let socket;
+  try {
+    socket = cloudflareConnect({ hostname: "192.0.2.1", port: 443 });
+    await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 预算ms))]);
+  } catch (error) {
+  }
+  try {
+    socket?.close?.();
+  } catch (error) {
+  }
+  return { ms: Date.now() - 起始, 预算: 预算ms };
+}
+async function 代理建连采样(request, env, 配置) {
+  const 候选列表 = [
+    ...env?.PROXYIP ? String(env.PROXYIP).split(/[,，\s]+/).filter(Boolean) : [],
+    ...配置?.反代?.PROXYIP ? String(配置.反代.PROXYIP).split(/[,，\s]+/).filter(Boolean) : []
+  ];
+  const 目标 = 解析反代地址(候选列表[0]);
+  if (!目标) return { ok: true, 跳过: "未配置反代PROXYIP" };
+  const 起始 = Date.now();
+  try {
+    const TCP连接 = 创建请求TCP连接器(request);
+    const socket = TCP连接({ hostname: 目标.hostname, port: 目标.port });
+    await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3e3))]);
+    return { ok: true, ms: Date.now() - 起始 };
+  } catch (error) {
+    return { ok: false, ms: Date.now() - 起始, error: String(error?.message || error) };
+  }
 }
 
 // src/core/network.js
@@ -7547,6 +7904,42 @@ async function 处理请求(request, env, ctx, 配置) {
           return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
         } else if (区分大小写访问路径 === "admin/api/usage-history") {
           return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
+        } else if (区分大小写访问路径 === "admin/api/self-check") {
+          try {
+            const 深度 = url.searchParams.get("deep") === "1";
+            const 结果 = await 执行自检(request, env, 配置, 深度);
+            if (深度) {
+              const [复用率, 超时预算, 代理] = await Promise.all([
+                连接复用采样(),
+                黑洞超时采样(6e3),
+                代理建连采样(request, env, 配置)
+              ]);
+              结果.deep = { ...结果.deep, 复用率, 超时预算, 代理 };
+            }
+            return new Response(JSON.stringify(结果, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8", "Cache-Control": "no-store" } });
+          } catch (error) {
+            return new Response(JSON.stringify({ error: "自检执行失败: " + error.message }), { status: 500, headers: { "Content-Type": "application/json;charset=utf-8" } });
+          }
+        } else if (区分大小写访问路径 === "admin/api/tcp-check") {
+          try {
+            const host2 = url.searchParams.get("host");
+            const port = parseInt(url.searchParams.get("port"), 10);
+            if (!host2 || !Number.isInteger(port) || port < 1 || port > 65535) {
+              return new Response(JSON.stringify({ error: "host 或 port 参数非法" }), { status: 400, headers: { "Content-Type": "application/json;charset=utf-8" } });
+            }
+            const 起始 = Date.now();
+            try {
+              const TCP连接 = 创建请求TCP连接器(request);
+              const socket = TCP连接({ hostname: host2, port });
+              await Promise.race([socket.opened, new Promise((r) => setTimeout(r, 3e3))]);
+              return new Response(JSON.stringify({ ok: true, ms: Date.now() - 起始 }), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
+            } catch (error) {
+              const 信息 = String(error?.message || error).slice(0, 100);
+              return new Response(JSON.stringify({ ok: false, ms: Date.now() - 起始, error: 信息 }), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
+            }
+          } catch (error) {
+            return new Response(JSON.stringify({ error: "tcp-check 执行失败" }), { status: 500, headers: { "Content-Type": "application/json;charset=utf-8" } });
+          }
         }
         ctx.waitUntil(请求日志记录(env, request, 访问IP, "Admin_Login", config_JSON));
         if (env.REMOTE_ADMIN === "true") return fetch(Pages静态页面 + "/admin" + url.search, { signal: AbortSignal.timeout(8e3) });

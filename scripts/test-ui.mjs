@@ -42,6 +42,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含运维/交互增强元素 ${标记}`);
   }
 
+  // 1.5) P2 自检 Tab / 代理连通测试 / 优选 IP 统计元素
+  for (const 标记 of ['id="page-check"', 'id="btn-run-check"', 'id="btn-run-deep"', 'id="chk-cn-pill"', 'id="chk-ip-pill"', 'id="chk-deep-pill"', 'id="chk-summary"', 'id="btn-node-test"', 'id="n-proto"', 'id="n-test-uri"', 'id="n-test-result"', 'id="o-add-stats"', 'id="btn-o-test-add"', 'id="o-add-test-out"']) {
+    assert.ok(html.includes(标记), `HTML 应包含 P2 元素 ${标记}`);
+  }
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,

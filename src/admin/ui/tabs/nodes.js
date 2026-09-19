@@ -24,6 +24,22 @@ function 节点Tab() {
     <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
     <div class="row" id="fmt-links"></div>
   </div>
+  <div class="card">
+    <h2>代理连通测试</h2>
+    <div class="row">
+      <select id="n-proto" style="max-width:120px">
+        <option value="socks5" selected>socks5</option>
+        <option value="http">http</option>
+        <option value="https">https</option>
+        <option value="turn">turn</option>
+        <option value="sstp">sstp</option>
+      </select>
+      <input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" style="flex:1;min-width:200px" />
+      <button type="button" class="btn" id="btn-node-test">测试</button>
+      <span class="pill" id="n-test-result">未测试</span>
+    </div>
+    <p class="dim">复用 /admin/check：在 Worker 边缘实际建连，验证代理通道可用性与响应时间。</p>
+  </div>
   <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
     <div class="box">
       <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
