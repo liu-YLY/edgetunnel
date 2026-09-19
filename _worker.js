@@ -627,6 +627,37 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
   }
 }
 
+// src/services/usage-history.js
+var 保留天数 = 30;
+function 日期字符串(现在 = /* @__PURE__ */ new Date()) {
+  const 年 = 现在.getFullYear();
+  const 月 = String(现在.getMonth() + 1).padStart(2, "0");
+  const 日 = String(现在.getDate()).padStart(2, "0");
+  return `${年}-${月}-${日}`;
+}
+async function 读取用量历史(env, host) {
+  try {
+    const 文本 = await env.KV.get("usage:" + host);
+    if (!文本) return [];
+    const 解析 = JSON.parse(文本);
+    if (!Array.isArray(解析)) return [];
+    return 解析.filter((e) => e && typeof e === "object" && typeof e.date === "string");
+  } catch {
+    return [];
+  }
+}
+async function 记录用量快照(env, host, usage, 现在 = /* @__PURE__ */ new Date()) {
+  if (!usage || usage.success !== true) return [];
+  const 今日 = 日期字符串(现在);
+  const 现有 = await 读取用量历史(env, host);
+  const 过滤 = 现有.filter((e) => e.date !== 今日);
+  const 快照 = { date: 今日, workers: usage.workers || 0, pages: usage.pages || 0, total: usage.total || 0, max: usage.max || 0 };
+  const 合并 = [...过滤, 快照].sort((a, b) => a.date < b.date ? -1 : 1);
+  const 最终 = 合并.slice(-保留天数);
+  await env.KV.put("usage:" + host, JSON.stringify(最终));
+  return 最终;
+}
+
 // src/config/index.js
 var 官方直连地址池 = Object.freeze([]);
 var 官方直连端口 = 443;
@@ -876,6 +907,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
         当前请求配置().ctx.waitUntil((async () => {
           try {
             entry.value = CF_JSON.UsageAPI ? await (await fetch(CF_JSON.UsageAPI, { signal: AbortSignal.timeout(8e3) })).json() : await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
+            if (entry.value?.success) await 记录用量快照(env, host, entry.value);
           } catch {
             console.error(JSON.stringify({ event: "usage_refresh_failed" }));
           } finally {
@@ -6339,15 +6371,28 @@ async function 处理请求(request, env, ctx, 配置) {
             try {
               const newConfig = await 读取管理JSON(request);
               const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null, UsageAPI: null };
+              let 现有CF全量 = {};
+              try {
+                现有CF全量 = JSON.parse(await env.KV.get("cf.json") || "null") || {};
+              } catch {
+              }
+              const 保留未变 = (名, 提交值) => 提交值 && 现有CF全量[名] && 提交值 === 掩码敏感信息(String(现有CF全量[名])) ? 现有CF全量[名] : 提交值;
               if (!newConfig.init || newConfig.init !== true) {
-                if (newConfig.Email && newConfig.GlobalAPIKey) {
-                  CF_JSON.Email = newConfig.Email;
-                  CF_JSON.GlobalAPIKey = newConfig.GlobalAPIKey;
-                } else if (newConfig.AccountID && newConfig.APIToken) {
-                  CF_JSON.AccountID = newConfig.AccountID;
-                  CF_JSON.APIToken = newConfig.APIToken;
-                } else if (newConfig.UsageAPI) {
-                  CF_JSON.UsageAPI = newConfig.UsageAPI;
+                const 处理后 = {
+                  Email: 保留未变("Email", newConfig.Email),
+                  GlobalAPIKey: 保留未变("GlobalAPIKey", newConfig.GlobalAPIKey),
+                  AccountID: 保留未变("AccountID", newConfig.AccountID),
+                  APIToken: 保留未变("APIToken", newConfig.APIToken),
+                  UsageAPI: 保留未变("UsageAPI", newConfig.UsageAPI)
+                };
+                if (处理后.Email && 处理后.GlobalAPIKey) {
+                  CF_JSON.Email = 处理后.Email;
+                  CF_JSON.GlobalAPIKey = 处理后.GlobalAPIKey;
+                } else if (处理后.AccountID && 处理后.APIToken) {
+                  CF_JSON.AccountID = 处理后.AccountID;
+                  CF_JSON.APIToken = 处理后.APIToken;
+                } else if (处理后.UsageAPI) {
+                  CF_JSON.UsageAPI = 处理后.UsageAPI;
                 } else {
                   return new Response(JSON.stringify({ error: "配置不完整" }), { status: 400, headers: { "Content-Type": "application/json;charset=utf-8" } });
                 }
@@ -6369,7 +6414,16 @@ async function 处理请求(request, env, ctx, 配置) {
                 失效配置缓存();
               } else {
                 if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: "配置不完整" }), { status: 400, headers: { "Content-Type": "application/json;charset=utf-8" } });
-                await env.KV.put("tg.json", JSON.stringify(newConfig, null, 2));
+                let 现有TG全量 = {};
+                try {
+                  现有TG全量 = JSON.parse(await env.KV.get("tg.json") || "null") || {};
+                } catch {
+                }
+                const TG_JSON = {
+                  BotToken: newConfig.BotToken && 现有TG全量.BotToken && newConfig.BotToken === 掩码敏感信息(String(现有TG全量.BotToken)) ? 现有TG全量.BotToken : newConfig.BotToken,
+                  ChatID: newConfig.ChatID
+                };
+                await env.KV.put("tg.json", JSON.stringify(TG_JSON, null, 2));
                 失效配置缓存();
               }
               ctx.waitUntil(请求日志记录(env, request, 访问IP, "Save_Config", config_JSON));
@@ -6409,6 +6463,8 @@ async function 处理请求(request, env, ctx, 配置) {
           return new Response(本地优选IP, { status: 200, headers: { "Content-Type": "text/plain;charset=utf-8", "asn": request.cf.asn } });
         } else if (访问路径 === "admin/cf.json") {
           return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
+        } else if (区分大小写访问路径 === "admin/api/usage-history") {
+          return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/config") {
           return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
         }

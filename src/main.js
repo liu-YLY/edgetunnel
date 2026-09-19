@@ -7,6 +7,7 @@ import { 保存配置 } from './config/store.js';
 import { Pages静态页面, Version, 特征码字典 } from './core/constants.js';
 import { log, 请求存储 } from './core/context.js';
 import { base64SecretEncode, 是拦截UA } from './core/options.js';
+import { 掩码敏感信息 } from './core/html.js';
 import { 替换星号为随机字符, 获取叉HTTPPadding标识 } from './core/paths.js';
 import { 识别运营商 } from './core/strings.js';
 import { 处理gRPC请求 } from './protocol/grpc.js';
@@ -17,6 +18,7 @@ import { 反代参数获取 } from './proxy/options.js';
 import { 生成随机IP, 请求优选API } from './proxy/preferred.js';
 import { 允许登录, 同源写请求, 签发会话, 读取管理JSON, 限长文本, 验证会话 } from './security.js';
 import { getCloudflareUsage } from './services/usage.js';
+import { 读取用量历史 } from './services/usage-history.js';
 import { Clash订阅配置文件热补丁 } from './subscribe/format-clash.js';
 import { Loon订阅配置文件热补丁 } from './subscribe/format-loon.js';
 import { 生成原生订阅 } from './subscribe/format-native.js';
@@ -237,15 +239,26 @@ async function 处理请求(request, env, ctx, 配置) {
 							try {
 								const newConfig = await 读取管理JSON(request);
 								const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null, UsageAPI: null };
+								// 掩码回写防护：提交值等于当前值的掩码表示时视为未改动，保留 KV 原值
+								let 现有CF全量 = {};
+								try { 现有CF全量 = JSON.parse(await env.KV.get('cf.json') || 'null') || {}; } catch {}
+								const 保留未变 = (名, 提交值) => (提交值 && 现有CF全量[名] && 提交值 === 掩码敏感信息(String(现有CF全量[名]))) ? 现有CF全量[名] : 提交值;
 								if (!newConfig.init || newConfig.init !== true) {
-									if (newConfig.Email && newConfig.GlobalAPIKey) {
-										CF_JSON.Email = newConfig.Email;
-										CF_JSON.GlobalAPIKey = newConfig.GlobalAPIKey;
-									} else if (newConfig.AccountID && newConfig.APIToken) {
-										CF_JSON.AccountID = newConfig.AccountID;
-										CF_JSON.APIToken = newConfig.APIToken;
-									} else if (newConfig.UsageAPI) {
-										CF_JSON.UsageAPI = newConfig.UsageAPI;
+									const 处理后 = {
+										Email: 保留未变('Email', newConfig.Email),
+										GlobalAPIKey: 保留未变('GlobalAPIKey', newConfig.GlobalAPIKey),
+										AccountID: 保留未变('AccountID', newConfig.AccountID),
+										APIToken: 保留未变('APIToken', newConfig.APIToken),
+										UsageAPI: 保留未变('UsageAPI', newConfig.UsageAPI),
+									};
+									if (处理后.Email && 处理后.GlobalAPIKey) {
+										CF_JSON.Email = 处理后.Email;
+										CF_JSON.GlobalAPIKey = 处理后.GlobalAPIKey;
+									} else if (处理后.AccountID && 处理后.APIToken) {
+										CF_JSON.AccountID = 处理后.AccountID;
+										CF_JSON.APIToken = 处理后.APIToken;
+									} else if (处理后.UsageAPI) {
+										CF_JSON.UsageAPI = 处理后.UsageAPI;
 									} else {
 										return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 									}
@@ -269,7 +282,13 @@ async function 处理请求(request, env, ctx, 配置) {
                                     失效配置缓存();
 								} else {
 									if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-									await env.KV.put('tg.json', JSON.stringify(newConfig, null, 2));
+									let 现有TG全量 = {};
+									try { 现有TG全量 = JSON.parse(await env.KV.get('tg.json') || 'null') || {}; } catch {}
+									const TG_JSON = {
+										BotToken: (newConfig.BotToken && 现有TG全量.BotToken && newConfig.BotToken === 掩码敏感信息(String(现有TG全量.BotToken))) ? 现有TG全量.BotToken : newConfig.BotToken,
+										ChatID: newConfig.ChatID,
+									};
+									await env.KV.put('tg.json', JSON.stringify(TG_JSON, null, 2));
                                     失效配置缓存();
 								}
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
@@ -309,6 +328,8 @@ async function 处理请求(request, env, ctx, 配置) {
 						return new Response(本地优选IP, { status: 200, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'asn': request.cf.asn } });
 					} else if (访问路径 === 'admin/cf.json') {// CF配置文件
 						return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+					} else if (区分大小写访问路径 === 'admin/api/usage-history') {// 用量历史（30 天快照，会话鉴权已在上方完成）
+						return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
 						return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					}
