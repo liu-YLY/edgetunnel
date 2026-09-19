@@ -76,6 +76,18 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
+  // 6) Task6 骨架屏标记
+  for (const 标记 of ['class="sk"', 'data-skeleton']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+
+  // 7) 每个内联 <script> 段都必须语法正确（覆盖 client.js 模板字符串转义问题）
+  const 内联段 = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.ok(内联段.length >= 3, `应有至少 3 个内联脚本段，实际 ${内联段.length}`);
+  内联段.forEach((段, i) => {
+    try { new Function(段); } catch (e) { assert.fail(`第 ${i + 1} 个内联脚本语法错误：${e.message}`); }
+  });
+
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
 })().catch((e) => { console.error('[test-ui] FAIL:', e); process.exit(1); });
