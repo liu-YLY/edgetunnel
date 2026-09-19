@@ -12,19 +12,23 @@ function 运维Tab(摘) {
   </div>
   <div class="card">
     <h2>Telegram 通知</h2>
-    <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || '')) || '未配置')}" />
-    <label>ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ''))}" />
-    <div class="row"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="o-tg-bot">BotToken</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || '')) || '未配置')}" /><span class="hint">留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-tg-chat">ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ''))}" /></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
   </div>
   <div class="card">
     <h2>Cloudflare API 凭据</h2>
-    <label>AccountID（留空保持不变）</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || '')) || '未配置')}" />
-    <label>APIToken（留空保持不变）</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || '')) || '未配置')}" />
-    <label>Email（备选认证）</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ''))}" />
-    <label>GlobalAPIKey（备选认证）</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || '')) || '未配置')}" />
-    <label>UsageAPI（可选，覆盖自动查询）</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ''))}" />
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="o-cf-account">AccountID</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || '')) || '未配置')}" /><span class="hint">留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-cf-token">APIToken</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || '')) || '未配置')}" /><span class="hint">推荐；留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-cf-email">Email</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ''))}" /><span class="hint">备选认证</span></div>
+      <div class="field"><label class="ctl" for="o-cf-gkey">GlobalAPIKey</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || '')) || '未配置')}" /><span class="hint">备选认证</span></div>
+      <div class="field"><label class="ctl" for="o-cf-usageapi">UsageAPI</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ''))}" /><span class="hint">可选，覆盖自动查询</span></div>
+    </div>
     <p class="dim">凭据仅保存在服务端 KV；页面始终掩码展示。留空的字段不会被提交覆盖。</p>
-    <div class="row"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
   </div>
   <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>

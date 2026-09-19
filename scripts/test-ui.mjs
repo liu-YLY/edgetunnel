@@ -67,6 +67,19 @@ import assert from 'node:assert/strict';
   assert.ok(生效HTML.includes('PRELOAD_RACE_DIAL（生效）</td><td>开启'), '预加载竞速拨号应显示生效值');
   assert.ok(生效HTML.includes('PROXY_CONCURRENT_DIAL（生效）</td><td>1'), '反代并发拨号应显示生效值');
 
+  // 1.8) HUD 表单组件：字段组 / 科幻开关 / 双列网格 / 优雅 select。
+  // 开关必须是 <label class="switch"> 内含 checkbox（id 与 checked 语义不变），
+  // 否则 client.js 的 $('#c-ECH').checked 赋值会失效。
+  for (const 类 of ['.fld-grid', '.field', '.field .ctl', '.field .hint', '.switch', '.switch input:checked + i', 'button.btn::after']) {
+    assert.ok(html.includes(类), `样式应包含 HUD 表单组件 ${类}`);
+  }
+  assert.ok(html.includes('<label class="switch"><input id="c-ECH" type="checkbox"'), 'ECH 必须是 switch 结构中的 checkbox');
+  assert.ok(html.includes('<label class="switch"><input id="c-启用0RTT" type="checkbox"'), '0RTT 必须是 switch 结构中的 checkbox');
+  assert.ok(html.includes('appearance:none'), 'select 必须去除原生外观换自定义箭头');
+  assert.ok(html.includes('id="c-协议类型"') && html.includes('id="c-传输协议"') && html.includes('id="c-TLS分片"'), '常用字段 select id 必须保留');
+  assert.ok(html.includes('id="o-tg-bot"') && html.includes('id="o-cf-token"') && html.includes('id="o-cf-usageapi"'), '凭据字段 id 必须保留');
+  assert.ok(html.includes('id="n-proto"') && html.includes('id="n-test-uri"'), '代理测试字段 id 必须保留');
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,

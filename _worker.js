@@ -595,8 +595,9 @@ nav button.on{background:linear-gradient(135deg,var(--acc2),var(--acc));color:#0
 .gauge{flex:0 0 120px}
 label{font-size:12px;color:var(--mut);display:block;margin:10px 0 4px}
 input,select,textarea{width:100%;background:color-mix(in srgb,var(--bg1) 55%,transparent);color:var(--fg);border:1px solid var(--line);padding:9px 10px;font-size:13px;outline:none;clip-path:polygon(0 6px,6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%)}
-input:focus,select:focus,textarea:focus{border-color:var(--acc2);box-shadow:0 0 0 2px color-mix(in srgb,var(--acc2) 28%,transparent)}
-textarea{font:12px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;resize:vertical}
+select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:30px;cursor:pointer;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="%237d90ad" fill="none" stroke-width="1.5"/></svg>');background-repeat:no-repeat;background-position:right 12px center}
+input:focus,select:focus,textarea:focus{border-color:var(--acc2);box-shadow:0 0 0 2px color-mix(in srgb,var(--acc2) 26%,transparent),0 0 16px color-mix(in srgb,var(--acc2) 14%,transparent)}
+textarea{font:12px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;resize:vertical}
 button.btn{min-height:42px;background:linear-gradient(135deg,var(--acc2),var(--acc));color:#06121f;border:0;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;clip-path:polygon(0 6px,6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%)}
 button.btn:disabled{opacity:.5;cursor:not-allowed}
 button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:400}
@@ -677,6 +678,31 @@ td.mn{width:200px;color:var(--mut)}
 .pill.err{color:var(--err);border-color:var(--err)}
 .pill.run{color:var(--warn);border-color:var(--warn);animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
+/* ================= HUD 表单组件：字段组 / 科幻开关 / 双列网格 / 按钮扫描光 ================= */
+.fld-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 16px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field .ctl{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--mut);letter-spacing:.6px;text-transform:uppercase;margin:0}
+.field .ctl::before{content:"";flex:0 0 auto;width:3px;height:12px;background:linear-gradient(var(--acc2),var(--acc));box-shadow:0 0 6px color-mix(in srgb,var(--acc) 60%,transparent)}
+.field .hint{font-size:11px;color:var(--mut);opacity:.85}
+.field input,.field select,.field textarea{margin:0}
+/* 科幻开关：checkbox 本体收起，可视滑块由 <i> 承担；checked 语义与 id 保持不变 */
+.switch{position:relative;display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;font-size:13px;color:var(--fg);margin:0;padding:8px 12px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg1) 40%,transparent);clip-path:polygon(0 6px,6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%);transition:border-color .18s,background .18s}
+.switch input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.switch i{position:relative;flex:0 0 auto;width:36px;height:19px;border-radius:999px;background:color-mix(in srgb,var(--bg3) 90%,transparent);border:1px solid var(--line);transition:background .18s,border-color .18s}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--mut);transition:left .18s,background .18s,box-shadow .18s}
+.switch:hover{border-color:color-mix(in srgb,var(--acc) 45%,transparent)}
+.switch input:checked + i{background:linear-gradient(135deg,var(--acc2),var(--acc));border-color:transparent}
+.switch input:checked + i::after{left:19px;background:#06121f;box-shadow:0 0 8px var(--acc2)}
+.switch input:focus-visible + i{outline:2px solid var(--acc2);outline-offset:2px}
+.switch:has(input:checked){background:color-mix(in srgb,var(--acc) 10%,transparent);border-color:color-mix(in srgb,var(--acc) 45%,transparent)}
+/* 按钮扫描光：hover 时一道光从左扫过 */
+button.btn{position:relative;overflow:hidden}
+button.btn::after{content:"";position:absolute;top:0;left:-70%;width:45%;height:100%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.32),transparent);transform:skewX(-20deg);pointer-events:none;transition:left .45s ease}
+button.btn:hover::after{left:130%}
+button.iconbtn{overflow:hidden}
+/* 危险操作按钮配色（保留 id 不变） */
+#btn-init{background:transparent;border:1px solid color-mix(in srgb,var(--err) 60%,transparent);color:var(--err)}
+#btn-init:hover{background:color-mix(in srgb,var(--err) 14%,transparent)}
 @media(max-width:640px){
 .hero{flex-direction:column}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg1) 88%,transparent);justify-content:space-around;border-top:1px solid var(--line)}
@@ -1623,18 +1649,17 @@ function 节点Tab() {
   </div>
   <div class="card">
     <h2>代理连通测试</h2>
-    <div class="row">
-      <select id="n-proto" style="max-width:120px">
+    <div class="fld-grid">
+      <div class="field" style="min-width:140px"><label class="ctl" for="n-proto">协议</label><select id="n-proto">
         <option value="socks5" selected>socks5</option>
         <option value="http">http</option>
         <option value="https">https</option>
         <option value="turn">turn</option>
         <option value="sstp">sstp</option>
-      </select>
-      <input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" style="flex:1;min-width:200px" />
-      <button type="button" class="btn" id="btn-node-test">测试</button>
-      <span class="pill" id="n-test-result">未测试</span>
+      </select></div>
+      <div class="field" style="grid-column:span 2;min-width:260px"><label class="ctl" for="n-test-uri">代理地址</label><input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" /></div>
     </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-node-test">测试</button><span class="pill" id="n-test-result">未测试</span></div>
     <p class="dim">复用 /admin/check：在 Worker 边缘实际建连，验证代理通道可用性与响应时间。</p>
   </div>
   <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
@@ -1653,16 +1678,19 @@ function 配置Tab(摘, env只读行) {
 <section class="page" id="page-config" role="tabpanel" data-page="config">
   <div class="card">
     <h2>常用字段</h2>
-    <div class="kvList">
-      <div><label>协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
-      <div><label>传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
-      <div><label>PATH</label><input id="c-PATH" /></div>
-      <div><label>Fingerprint</label><input id="c-Fingerprint" /></div>
-      <div><label>ALPN（空则不生成）</label><input id="c-ALPN" placeholder="h2" /></div>
-      <div><label>TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
-      <div class="row" style="grid-column:1/-1"><label><input id="c-ECH" type="checkbox" /> ECH</label><label><input id="c-启用0RTT" type="checkbox" /> 启用 0RTT</label></div>
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="c-协议类型">协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
+      <div class="field"><label class="ctl" for="c-传输协议">传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
+      <div class="field"><label class="ctl" for="c-PATH">PATH</label><input id="c-PATH" placeholder="/" /><span class="hint">节点路径，留空默认 /</span></div>
+      <div class="field"><label class="ctl" for="c-Fingerprint">Fingerprint</label><input id="c-Fingerprint" placeholder="chrome" /></div>
+      <div class="field"><label class="ctl" for="c-ALPN">ALPN</label><input id="c-ALPN" placeholder="h2 / http/1.1" /><span class="hint">空则不生成 alpn 参数</span></div>
+      <div class="field"><label class="ctl" for="c-TLS分片">TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
     </div>
-    <div class="row"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
+    <div class="row" style="margin-top:14px">
+      <label class="switch"><input id="c-ECH" type="checkbox" /><i></i><span>ECH（加密 ClientHello）</span></label>
+      <label class="switch"><input id="c-启用0RTT" type="checkbox" /><i></i><span>启用 0RTT</span></label>
+    </div>
+    <div class="row" style="margin-top:16px"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
   </div>
   <div class="card">
     <h2>KV 全量配置（JSON）</h2>
@@ -1690,19 +1718,23 @@ function 运维Tab(摘) {
   </div>
   <div class="card">
     <h2>Telegram 通知</h2>
-    <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || "")) || "未配置")}" />
-    <label>ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ""))}" />
-    <div class="row"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="o-tg-bot">BotToken</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || "")) || "未配置")}" /><span class="hint">留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-tg-chat">ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ""))}" /></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
   </div>
   <div class="card">
     <h2>Cloudflare API 凭据</h2>
-    <label>AccountID（留空保持不变）</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || "")) || "未配置")}" />
-    <label>APIToken（留空保持不变）</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || "")) || "未配置")}" />
-    <label>Email（备选认证）</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ""))}" />
-    <label>GlobalAPIKey（备选认证）</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || "")) || "未配置")}" />
-    <label>UsageAPI（可选，覆盖自动查询）</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ""))}" />
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="o-cf-account">AccountID</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || "")) || "未配置")}" /><span class="hint">留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-cf-token">APIToken</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || "")) || "未配置")}" /><span class="hint">推荐；留空保持不变</span></div>
+      <div class="field"><label class="ctl" for="o-cf-email">Email</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ""))}" /><span class="hint">备选认证</span></div>
+      <div class="field"><label class="ctl" for="o-cf-gkey">GlobalAPIKey</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || "")) || "未配置")}" /><span class="hint">备选认证</span></div>
+      <div class="field"><label class="ctl" for="o-cf-usageapi">UsageAPI</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ""))}" /><span class="hint">可选，覆盖自动查询</span></div>
+    </div>
     <p class="dim">凭据仅保存在服务端 KV；页面始终掩码展示。留空的字段不会被提交覆盖。</p>
-    <div class="row"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
   </div>
   <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>

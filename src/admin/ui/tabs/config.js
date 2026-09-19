@@ -6,16 +6,19 @@ function 配置Tab(摘, env只读行) {
 <section class="page" id="page-config" role="tabpanel" data-page="config">
   <div class="card">
     <h2>常用字段</h2>
-    <div class="kvList">
-      <div><label>协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
-      <div><label>传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
-      <div><label>PATH</label><input id="c-PATH" /></div>
-      <div><label>Fingerprint</label><input id="c-Fingerprint" /></div>
-      <div><label>ALPN（空则不生成）</label><input id="c-ALPN" placeholder="h2" /></div>
-      <div><label>TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
-      <div class="row" style="grid-column:1/-1"><label><input id="c-ECH" type="checkbox" /> ECH</label><label><input id="c-启用0RTT" type="checkbox" /> 启用 0RTT</label></div>
+    <div class="fld-grid">
+      <div class="field"><label class="ctl" for="c-协议类型">协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
+      <div class="field"><label class="ctl" for="c-传输协议">传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
+      <div class="field"><label class="ctl" for="c-PATH">PATH</label><input id="c-PATH" placeholder="/" /><span class="hint">节点路径，留空默认 /</span></div>
+      <div class="field"><label class="ctl" for="c-Fingerprint">Fingerprint</label><input id="c-Fingerprint" placeholder="chrome" /></div>
+      <div class="field"><label class="ctl" for="c-ALPN">ALPN</label><input id="c-ALPN" placeholder="h2 / http/1.1" /><span class="hint">空则不生成 alpn 参数</span></div>
+      <div class="field"><label class="ctl" for="c-TLS分片">TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
     </div>
-    <div class="row"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
+    <div class="row" style="margin-top:14px">
+      <label class="switch"><input id="c-ECH" type="checkbox" /><i></i><span>ECH（加密 ClientHello）</span></label>
+      <label class="switch"><input id="c-启用0RTT" type="checkbox" /><i></i><span>启用 0RTT</span></label>
+    </div>
+    <div class="row" style="margin-top:16px"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
   </div>
   <div class="card">
     <h2>KV 全量配置（JSON）</h2>

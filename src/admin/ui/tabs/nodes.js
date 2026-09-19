@@ -26,18 +26,17 @@ function 节点Tab() {
   </div>
   <div class="card">
     <h2>代理连通测试</h2>
-    <div class="row">
-      <select id="n-proto" style="max-width:120px">
+    <div class="fld-grid">
+      <div class="field" style="min-width:140px"><label class="ctl" for="n-proto">协议</label><select id="n-proto">
         <option value="socks5" selected>socks5</option>
         <option value="http">http</option>
         <option value="https">https</option>
         <option value="turn">turn</option>
         <option value="sstp">sstp</option>
-      </select>
-      <input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" style="flex:1;min-width:200px" />
-      <button type="button" class="btn" id="btn-node-test">测试</button>
-      <span class="pill" id="n-test-result">未测试</span>
+      </select></div>
+      <div class="field" style="grid-column:span 2;min-width:260px"><label class="ctl" for="n-test-uri">代理地址</label><input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" /></div>
     </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-node-test">测试</button><span class="pill" id="n-test-result">未测试</span></div>
     <p class="dim">复用 /admin/check：在 Worker 边缘实际建连，验证代理通道可用性与响应时间。</p>
   </div>
   <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
