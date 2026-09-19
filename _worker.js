@@ -215,6 +215,50 @@ function 有效数据长度(data) {
   if (typeof data.length === "number") return data.length;
   return 0;
 }
+function 创建可增长缓冲(初始容量 = 1024) {
+  let 数据 = new Uint8Array(初始容量), 读索引 = 0, 写索引 = 0;
+  const 缓冲对象 = {
+    get 剩余字节数() {
+      return 写索引 - 读索引;
+    },
+    追加(chunk) {
+      const 块 = 数据转Uint8Array(chunk);
+      if (!块.byteLength) return;
+      const 可用 = 数据.byteLength - 写索引;
+      if (块.byteLength > 可用) {
+        const 未消费 = 写索引 - 读索引;
+        if (未消费 + 块.byteLength > 数据.byteLength) {
+          const 新数据 = new Uint8Array(Math.max(数据.byteLength * 2, 未消费 + 块.byteLength));
+          新数据.set(数据.subarray(读索引, 写索引), 0);
+          数据 = 新数据;
+          读索引 = 0;
+          写索引 = 未消费;
+        } else if (读索引 > 0) {
+          数据.copyWithin(0, 读索引, 写索引);
+          写索引 -= 读索引;
+          读索引 = 0;
+        }
+      } else if (读索引 > 0 && 读索引 * 2 >= 写索引) {
+        数据.copyWithin(0, 读索引, 写索引);
+        写索引 -= 读索引;
+        读索引 = 0;
+      }
+      数据.set(块, 写索引);
+      写索引 += 块.byteLength;
+    },
+    消费(n) {
+      读索引 = Math.min(写索引, 读索引 + n);
+      if (读索引 >= 写索引) {
+        读索引 = 0;
+        写索引 = 0;
+      }
+    },
+    视图() {
+      return 数据.subarray(读索引, 写索引);
+    }
+  };
+  return 缓冲对象;
+}
 
 // src/core/errors.js
 function 输入错误(message, status = 400) {
@@ -3616,22 +3660,20 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
       };
       let 转发失败 = false;
       try {
-        let pending = new Uint8Array(0);
+        const 重组缓冲 = 创建可增长缓冲();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (!value || value.byteLength === 0) continue;
           const 当前块 = value instanceof Uint8Array ? value : new Uint8Array(value);
-          const merged = new Uint8Array(pending.length + 当前块.length);
-          merged.set(pending, 0);
-          merged.set(当前块, pending.length);
-          pending = merged;
-          while (pending.byteLength >= 5) {
-            const grpcLen = pending[1] << 24 >>> 0 | pending[2] << 16 | pending[3] << 8 | pending[4];
+          重组缓冲.追加(当前块);
+          while (重组缓冲.剩余字节数 >= 5) {
+            const 帧视图 = 重组缓冲.视图();
+            const grpcLen = 帧视图[1] << 24 >>> 0 | 帧视图[2] << 16 | 帧视图[3] << 8 | 帧视图[4];
             const frameSize = 5 + grpcLen;
-            if (pending.byteLength < frameSize) break;
-            const grpcPayload = pending.subarray(5, frameSize);
-            pending = pending.slice(frameSize);
+            if (重组缓冲.剩余字节数 < frameSize) break;
+            const grpcPayload = 帧视图.slice(5, frameSize);
+            重组缓冲.消费(frameSize);
             if (!grpcPayload.byteLength) continue;
             let payload = grpcPayload;
             if (payload.byteLength >= 2 && payload[0] === 10) {
