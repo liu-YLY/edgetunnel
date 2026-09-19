@@ -23,8 +23,13 @@ function 配置Tab(摘, env只读行) {
   <div class="card">
     <h2>KV 全量配置（JSON）</h2>
     <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
-    <label for="cfg">当前配置 JSON</label>
-    <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+    <label class="ctl" for="cfg">当前配置 JSON</label>
+    <div class="cfg-editor">
+      <div class="cfg-ln" id="cfg-ln" aria-hidden="true"></div>
+      <pre id="cfg-hl" aria-hidden="true"></pre>
+      <textarea id="cfg" rows="14" wrap="off" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+    </div>
+    <div class="cfg-bar"><span class="dim" id="cfg-pos"></span><span class="dim" id="cfg-state"></span></div>
     <div id="cfg-check" role="status" aria-live="polite"></div>
   </div>
   <div class="card">

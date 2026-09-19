@@ -224,6 +224,82 @@ const 客户端脚本 = `
     }
     return errs;
   }
+  // —— JSON 编辑器增强：行号 + 语法高亮（逐字符状态机，规避模板内联转义陷阱）+ 光标行列 ——
+  function 编辑器行数(文本) {
+    var n = 1, i;
+    for (i = 0; i < 文本.length; i++) if (文本.charAt(i) === '\\n') n++;
+    return n;
+  }
+  function 是数字词(词) {
+    if (!词) return false;
+    var i, c;
+    for (i = 0; i < 词.length; i++) { c = 词.charAt(i); if (!((c >= '0' && c <= '9') || c === '-' || c === '+' || c === '.' || c === 'e' || c === 'E')) return false; }
+    return true;
+  }
+  // 语法高亮：仅当整体 JSON 可解析时执行；字符串按转义逐字符消费，避免正则回溯与大小写问题。
+  function 语法高亮文本(文本) {
+    try { JSON.parse(文本); } catch (e) { return { html: 转义文本(文本), ok: false }; }
+    var 出 = '', 词 = '', 串 = false, 待定串 = null, i, c;
+    function 结算词() {
+      if (!词) return;
+      if (词 === 'true' || 词 === 'false') 出 += '<span class="tk-bool">' + 词 + '</span>';
+      else if (词 === 'null') 出 += '<span class="tk-null">' + 词 + '</span>';
+      else if (是数字词(词)) 出 += '<span class="tk-num">' + 词 + '</span>';
+      else 出 += 词;
+      词 = '';
+    }
+    for (i = 0; i < 文本.length; i++) {
+      c = 文本.charAt(i);
+      if (串) {
+        if (c === '\\\\') { 词 += c; if (i + 1 < 文本.length) 词 += 文本.charAt(++i); continue; }
+        词 += c;
+        if (c === '"') { 待定串 = 词; 词 = ''; 串 = false; }
+        continue;
+      }
+      if (待定串) {
+        if (c === ':') { 出 += '<span class="tk-key">' + 转义文本(待定串) + '</span>:'; 待定串 = null; continue; }
+        出 += '<span class="tk-str">' + 转义文本(待定串) + '</span>'; 待定串 = null;
+      }
+      if (c === '"') { 结算词(); 词 = '"'; 串 = true; continue; }
+      if (c === ' ' || c === '\\t' || c === '\\n' || c === '{' || c === '}' || c === '[' || c === ']' || c === ',' || c === ':') { 结算词(); 出 += c; continue; }
+      词 += c;
+    }
+    if (待定串) 出 += '<span class="tk-str">' + 转义文本(待定串) + '</span>';
+    结算词();
+    return { html: 出, ok: true };
+  }
+  function 编辑器更新状态(ta, 文本) {
+    if (!ta) { ta = $('#cfg'); if (!ta) return; 文本 = ta.value || ''; }
+    var pos = $('#cfg-pos'), state = $('#cfg-state'), 起, 行, 列, k;
+    起 = ta.selectionStart || 0; 行 = 1; 列 = 1;
+    for (k = 0; k < 起; k++) { if (文本.charAt(k) === '\\n') { 行++; 列 = 1; } else 列++; }
+    if (pos) pos.textContent = '行 ' + 行 + ' · 列 ' + 列;
+    if (state) {
+      var ok = true; try { JSON.parse(文本); } catch (e2) { ok = false; }
+      if (ok) { state.textContent = 'JSON 合法'; state.className = 'dim good'; }
+      else { state.textContent = 'JSON 解析错误'; state.className = 'dim bad'; }
+    }
+  }
+  function 编辑器渲染() {
+    var ta = $('#cfg'); if (!ta) return;
+    var 文本 = ta.value || '';
+    try {
+      var h = 语法高亮文本(文本);
+      var hl = document.getElementById('cfg-hl');
+      if (hl) hl.innerHTML = h.html + '\\n';
+      var ln = document.getElementById('cfg-ln');
+      if (ln) {
+        var n = 编辑器行数(文本), s = '', k;
+        for (k = 1; k <= n; k++) s += k + '\\n';
+        ln.textContent = s;
+        ln.scrollTop = ta.scrollTop;
+      }
+    } catch (e) { var _hl = document.getElementById('cfg-hl'); if (_hl) _hl.innerHTML = '\\n'; }
+    编辑器更新状态(ta, 文本);
+  }
+  var 编辑器定时 = null;
+  function 编辑器渲染防抖() { clearTimeout(编辑器定时); 编辑器定时 = setTimeout(编辑器渲染, 120); }
+
   function 校验编辑器() {
     var box = $('#cfg-check'), ta = $('#cfg');
     var errs = [], obj = null, 解析失败 = false;
@@ -269,7 +345,7 @@ const 客户端脚本 = `
   function 写入配置() {
     if (!待保存配置) return;
     api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(待保存配置) })
-      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); 已加载配置文本 = $('#cfg').value; 清草稿(); 校验编辑器(); })
+      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); 已加载配置文本 = $('#cfg').value; 清草稿(); 校验编辑器(); 编辑器渲染(); })
       .catch(function (e) { statusCfg('保存失败：' + e.message); toast('保存失败：' + e.message, false); })
       .then(function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
   }
@@ -278,8 +354,8 @@ const 客户端脚本 = `
   var 草稿键 = 'et_admin_draft_cfg';
   var 撤销栈 = [], 重做栈 = [];
   function 压栈(旧值) { if (旧值 === $('#cfg').value) return; 撤销栈.push(旧值); if (撤销栈.length > 50) 撤销栈.shift(); 重做栈.length = 0; }
-  function 撤销() { if (!撤销栈.length) return; 重做栈.push($('#cfg').value); $('#cfg').value = 撤销栈.pop(); 校验编辑器(); 存草稿(); }
-  function 重做() { if (!重做栈.length) return; 撤销栈.push($('#cfg').value); $('#cfg').value = 重做栈.pop(); 校验编辑器(); 存草稿(); }
+  function 撤销() { if (!撤销栈.length) return; 重做栈.push($('#cfg').value); $('#cfg').value = 撤销栈.pop(); 校验编辑器(); 编辑器渲染(); 存草稿(); }
+  function 重做() { if (!重做栈.length) return; 撤销栈.push($('#cfg').value); $('#cfg').value = 重做栈.pop(); 校验编辑器(); 编辑器渲染(); 存草稿(); }
   function 存草稿() { try { localStorage.setItem(草稿键, $('#cfg').value); } catch (e) {} }
   function 清草稿() { try { localStorage.removeItem(草稿键); } catch (e) {} }
   var 草稿定时 = null;
@@ -287,7 +363,7 @@ const 客户端脚本 = `
   function 恢复草稿提示() {
     var d = null; try { d = localStorage.getItem(草稿键); } catch (e) {}
     if (!d || d === $('#cfg').value) return;
-    if (confirm('检测到未保存的草稿，是否恢复到编辑器？（取消则丢弃）')) { 压栈($('#cfg').value); $('#cfg').value = d; 校验编辑器(); }
+    if (confirm('检测到未保存的草稿，是否恢复到编辑器？（取消则丢弃）')) { 压栈($('#cfg').value); $('#cfg').value = d; 校验编辑器(); 编辑器渲染(); }
     else 清草稿();
   }
 
@@ -471,7 +547,7 @@ const 客户端脚本 = `
   function loadConfig() {
     api('/admin/config.json').then(function (cfg) {
       $('#cfg').value = JSON.stringify(cfg, null, 2);
-      已加载配置文本 = $('#cfg').value; 校验编辑器(); 恢复草稿提示();
+      已加载配置文本 = $('#cfg').value; 校验编辑器(); 编辑器渲染(); 恢复草稿提示();
       var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
       var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
       $('#c-PATH').value = cfg.PATH || '';
@@ -487,7 +563,14 @@ const 客户端脚本 = `
   $('#btn-save-json').addEventListener('click', 请求保存配置);
   $('#btn-diff-cancel').addEventListener('click', function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
   $('#btn-diff-confirm').addEventListener('click', 写入配置);
-  $('#cfg').addEventListener('input', function () { 校验编辑器(); 防抖存草稿(); });
+  $('#cfg').addEventListener('input', function () { 校验编辑器(); 编辑器渲染防抖(); 防抖存草稿(); });
+  $('#cfg').addEventListener('keyup', function () { 编辑器更新状态(); });
+  $('#cfg').addEventListener('click', function () { 编辑器更新状态(); });
+  $('#cfg').addEventListener('scroll', function () {
+    var hl = document.getElementById('cfg-hl'), ln = document.getElementById('cfg-ln');
+    if (hl) { hl.scrollTop = this.scrollTop; hl.scrollLeft = this.scrollLeft; }
+    if (ln) { ln.scrollTop = this.scrollTop; ln.scrollLeft = this.scrollLeft; }
+  });
   $('#cfg').addEventListener('focus', function () { 压栈($('#cfg').value); });
   $('#cfg').addEventListener('keydown', function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? 重做() : 撤销(); } });
   $('#btn-restore').addEventListener('click', function () {
@@ -829,7 +912,7 @@ const 客户端脚本 = `
     navigator.clipboard.readText().then(function (t) {
       var v;
       try { v = JSON.stringify(JSON.parse(t), null, 2); } catch (e) { toast('剪贴板内容不是合法 JSON', false); return; }
-      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存');
+      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存'); 编辑器渲染();
     }).catch(function () { toast('无法读取剪贴板', false); });
   });
 

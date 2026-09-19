@@ -703,6 +703,27 @@ button.iconbtn{overflow:hidden}
 /* 危险操作按钮配色（保留 id 不变） */
 #btn-init{background:transparent;border:1px solid color-mix(in srgb,var(--err) 60%,transparent);color:var(--err)}
 #btn-init:hover{background:color-mix(in srgb,var(--err) 14%,transparent)}
+/* ================= JSON 编辑器：行号 + overlay 语法高亮 + 状态栏 ================= */
+.cfg-editor{position:relative;margin-top:6px}
+.cfg-editor .cfg-ln{position:absolute;left:0;top:0;bottom:0;width:46px;overflow:hidden;text-align:right;padding:9px 8px 0 0;color:color-mix(in srgb,var(--fg) 42%,transparent);border-right:1px solid var(--line);background:color-mix(in srgb,var(--bg1) 42%,transparent);font:12px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;user-select:none;pointer-events:none;z-index:1}
+.cfg-editor pre{position:absolute;left:47px;top:0;right:0;bottom:0;margin:0;padding:9px 10px 9px 11px;overflow:hidden;white-space:pre;background:transparent;border:0;font:12px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;pointer-events:none;z-index:0}
+.cfg-editor textarea{position:relative;z-index:2;padding-left:58px;line-height:1.6;tab-size:2;background:transparent;color:transparent;caret-color:var(--fg)}
+.cfg-editor textarea::placeholder{color:color-mix(in srgb,var(--mut) 75%,transparent)}
+.cfg-editor textarea::selection{background:color-mix(in srgb,var(--acc) 34%,transparent);color:transparent}
+.cfg-bar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.cfg-bar .bad{color:var(--err)}
+.cfg-bar .good{color:var(--ok)}
+/* 语法高亮 token（客户端状态机生成，不依赖配置内容） */
+.tk-key{color:var(--acc2)}
+.tk-str{color:var(--ok)}
+.tk-num{color:var(--warn)}
+.tk-bool{color:var(--err)}
+.tk-null{color:var(--err)}
+/* ================= 弹窗细化：顶部装饰线 + 打开动效 ================= */
+#qr-modal .box,#kbd-help .box,#cmdk .box,#diff-modal .box{position:relative;overflow:hidden}
+#qr-modal .box::before,#kbd-help .box::before,#cmdk .box::before,#diff-modal .box::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc2),var(--acc) 55%,transparent);z-index:2}
+#qr-modal.open,#kbd-help.open,#cmdk.open,#diff-modal.open{animation:pop-in .16s ease}
+@keyframes pop-in{from{opacity:0;transform:scale(.965)}to{opacity:1;transform:none}}
 @media(max-width:640px){
 .hero{flex-direction:column}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg1) 88%,transparent);justify-content:space-around;border-top:1px solid var(--line)}
@@ -936,6 +957,82 @@ var 客户端脚本 = `
     }
     return errs;
   }
+  // —— JSON 编辑器增强：行号 + 语法高亮（逐字符状态机，规避模板内联转义陷阱）+ 光标行列 ——
+  function 编辑器行数(文本) {
+    var n = 1, i;
+    for (i = 0; i < 文本.length; i++) if (文本.charAt(i) === '\\n') n++;
+    return n;
+  }
+  function 是数字词(词) {
+    if (!词) return false;
+    var i, c;
+    for (i = 0; i < 词.length; i++) { c = 词.charAt(i); if (!((c >= '0' && c <= '9') || c === '-' || c === '+' || c === '.' || c === 'e' || c === 'E')) return false; }
+    return true;
+  }
+  // 语法高亮：仅当整体 JSON 可解析时执行；字符串按转义逐字符消费，避免正则回溯与大小写问题。
+  function 语法高亮文本(文本) {
+    try { JSON.parse(文本); } catch (e) { return { html: 转义文本(文本), ok: false }; }
+    var 出 = '', 词 = '', 串 = false, 待定串 = null, i, c;
+    function 结算词() {
+      if (!词) return;
+      if (词 === 'true' || 词 === 'false') 出 += '<span class="tk-bool">' + 词 + '</span>';
+      else if (词 === 'null') 出 += '<span class="tk-null">' + 词 + '</span>';
+      else if (是数字词(词)) 出 += '<span class="tk-num">' + 词 + '</span>';
+      else 出 += 词;
+      词 = '';
+    }
+    for (i = 0; i < 文本.length; i++) {
+      c = 文本.charAt(i);
+      if (串) {
+        if (c === '\\\\') { 词 += c; if (i + 1 < 文本.length) 词 += 文本.charAt(++i); continue; }
+        词 += c;
+        if (c === '"') { 待定串 = 词; 词 = ''; 串 = false; }
+        continue;
+      }
+      if (待定串) {
+        if (c === ':') { 出 += '<span class="tk-key">' + 转义文本(待定串) + '</span>:'; 待定串 = null; continue; }
+        出 += '<span class="tk-str">' + 转义文本(待定串) + '</span>'; 待定串 = null;
+      }
+      if (c === '"') { 结算词(); 词 = '"'; 串 = true; continue; }
+      if (c === ' ' || c === '\\t' || c === '\\n' || c === '{' || c === '}' || c === '[' || c === ']' || c === ',' || c === ':') { 结算词(); 出 += c; continue; }
+      词 += c;
+    }
+    if (待定串) 出 += '<span class="tk-str">' + 转义文本(待定串) + '</span>';
+    结算词();
+    return { html: 出, ok: true };
+  }
+  function 编辑器更新状态(ta, 文本) {
+    if (!ta) { ta = $('#cfg'); if (!ta) return; 文本 = ta.value || ''; }
+    var pos = $('#cfg-pos'), state = $('#cfg-state'), 起, 行, 列, k;
+    起 = ta.selectionStart || 0; 行 = 1; 列 = 1;
+    for (k = 0; k < 起; k++) { if (文本.charAt(k) === '\\n') { 行++; 列 = 1; } else 列++; }
+    if (pos) pos.textContent = '行 ' + 行 + ' · 列 ' + 列;
+    if (state) {
+      var ok = true; try { JSON.parse(文本); } catch (e2) { ok = false; }
+      if (ok) { state.textContent = 'JSON 合法'; state.className = 'dim good'; }
+      else { state.textContent = 'JSON 解析错误'; state.className = 'dim bad'; }
+    }
+  }
+  function 编辑器渲染() {
+    var ta = $('#cfg'); if (!ta) return;
+    var 文本 = ta.value || '';
+    try {
+      var h = 语法高亮文本(文本);
+      var hl = document.getElementById('cfg-hl');
+      if (hl) hl.innerHTML = h.html + '\\n';
+      var ln = document.getElementById('cfg-ln');
+      if (ln) {
+        var n = 编辑器行数(文本), s = '', k;
+        for (k = 1; k <= n; k++) s += k + '\\n';
+        ln.textContent = s;
+        ln.scrollTop = ta.scrollTop;
+      }
+    } catch (e) { var _hl = document.getElementById('cfg-hl'); if (_hl) _hl.innerHTML = '\\n'; }
+    编辑器更新状态(ta, 文本);
+  }
+  var 编辑器定时 = null;
+  function 编辑器渲染防抖() { clearTimeout(编辑器定时); 编辑器定时 = setTimeout(编辑器渲染, 120); }
+
   function 校验编辑器() {
     var box = $('#cfg-check'), ta = $('#cfg');
     var errs = [], obj = null, 解析失败 = false;
@@ -981,7 +1078,7 @@ var 客户端脚本 = `
   function 写入配置() {
     if (!待保存配置) return;
     api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(待保存配置) })
-      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); 已加载配置文本 = $('#cfg').value; 清草稿(); 校验编辑器(); })
+      .then(function (r) { statusCfg('保存成功：' + (r.message || '')); toast('配置已保存', true); 已加载配置文本 = $('#cfg').value; 清草稿(); 校验编辑器(); 编辑器渲染(); })
       .catch(function (e) { statusCfg('保存失败：' + e.message); toast('保存失败：' + e.message, false); })
       .then(function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
   }
@@ -990,8 +1087,8 @@ var 客户端脚本 = `
   var 草稿键 = 'et_admin_draft_cfg';
   var 撤销栈 = [], 重做栈 = [];
   function 压栈(旧值) { if (旧值 === $('#cfg').value) return; 撤销栈.push(旧值); if (撤销栈.length > 50) 撤销栈.shift(); 重做栈.length = 0; }
-  function 撤销() { if (!撤销栈.length) return; 重做栈.push($('#cfg').value); $('#cfg').value = 撤销栈.pop(); 校验编辑器(); 存草稿(); }
-  function 重做() { if (!重做栈.length) return; 撤销栈.push($('#cfg').value); $('#cfg').value = 重做栈.pop(); 校验编辑器(); 存草稿(); }
+  function 撤销() { if (!撤销栈.length) return; 重做栈.push($('#cfg').value); $('#cfg').value = 撤销栈.pop(); 校验编辑器(); 编辑器渲染(); 存草稿(); }
+  function 重做() { if (!重做栈.length) return; 撤销栈.push($('#cfg').value); $('#cfg').value = 重做栈.pop(); 校验编辑器(); 编辑器渲染(); 存草稿(); }
   function 存草稿() { try { localStorage.setItem(草稿键, $('#cfg').value); } catch (e) {} }
   function 清草稿() { try { localStorage.removeItem(草稿键); } catch (e) {} }
   var 草稿定时 = null;
@@ -999,7 +1096,7 @@ var 客户端脚本 = `
   function 恢复草稿提示() {
     var d = null; try { d = localStorage.getItem(草稿键); } catch (e) {}
     if (!d || d === $('#cfg').value) return;
-    if (confirm('检测到未保存的草稿，是否恢复到编辑器？（取消则丢弃）')) { 压栈($('#cfg').value); $('#cfg').value = d; 校验编辑器(); }
+    if (confirm('检测到未保存的草稿，是否恢复到编辑器？（取消则丢弃）')) { 压栈($('#cfg').value); $('#cfg').value = d; 校验编辑器(); 编辑器渲染(); }
     else 清草稿();
   }
 
@@ -1183,7 +1280,7 @@ var 客户端脚本 = `
   function loadConfig() {
     api('/admin/config.json').then(function (cfg) {
       $('#cfg').value = JSON.stringify(cfg, null, 2);
-      已加载配置文本 = $('#cfg').value; 校验编辑器(); 恢复草稿提示();
+      已加载配置文本 = $('#cfg').value; 校验编辑器(); 编辑器渲染(); 恢复草稿提示();
       var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
       var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
       $('#c-PATH').value = cfg.PATH || '';
@@ -1199,7 +1296,14 @@ var 客户端脚本 = `
   $('#btn-save-json').addEventListener('click', 请求保存配置);
   $('#btn-diff-cancel').addEventListener('click', function () { 待保存配置 = null; 关闭弹层($('#diff-modal')); });
   $('#btn-diff-confirm').addEventListener('click', 写入配置);
-  $('#cfg').addEventListener('input', function () { 校验编辑器(); 防抖存草稿(); });
+  $('#cfg').addEventListener('input', function () { 校验编辑器(); 编辑器渲染防抖(); 防抖存草稿(); });
+  $('#cfg').addEventListener('keyup', function () { 编辑器更新状态(); });
+  $('#cfg').addEventListener('click', function () { 编辑器更新状态(); });
+  $('#cfg').addEventListener('scroll', function () {
+    var hl = document.getElementById('cfg-hl'), ln = document.getElementById('cfg-ln');
+    if (hl) { hl.scrollTop = this.scrollTop; hl.scrollLeft = this.scrollLeft; }
+    if (ln) { ln.scrollTop = this.scrollTop; ln.scrollLeft = this.scrollLeft; }
+  });
   $('#cfg').addEventListener('focus', function () { 压栈($('#cfg').value); });
   $('#cfg').addEventListener('keydown', function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? 重做() : 撤销(); } });
   $('#btn-restore').addEventListener('click', function () {
@@ -1541,7 +1645,7 @@ var 客户端脚本 = `
     navigator.clipboard.readText().then(function (t) {
       var v;
       try { v = JSON.stringify(JSON.parse(t), null, 2); } catch (e) { toast('剪贴板内容不是合法 JSON', false); return; }
-      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存');
+      $('#cfg').value = v; statusCfg('已导入，请核对后点击保存'); 编辑器渲染();
     }).catch(function () { toast('无法读取剪贴板', false); });
   });
 
@@ -1695,8 +1799,13 @@ function 配置Tab(摘, env只读行) {
   <div class="card">
     <h2>KV 全量配置（JSON）</h2>
     <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
-    <label for="cfg">当前配置 JSON</label>
-    <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+    <label class="ctl" for="cfg">当前配置 JSON</label>
+    <div class="cfg-editor">
+      <div class="cfg-ln" id="cfg-ln" aria-hidden="true"></div>
+      <pre id="cfg-hl" aria-hidden="true"></pre>
+      <textarea id="cfg" rows="14" wrap="off" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+    </div>
+    <div class="cfg-bar"><span class="dim" id="cfg-pos"></span><span class="dim" id="cfg-state"></span></div>
     <div id="cfg-check" role="status" aria-live="polite"></div>
   </div>
   <div class="card">

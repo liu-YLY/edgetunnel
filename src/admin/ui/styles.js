@@ -134,6 +134,27 @@ button.iconbtn{overflow:hidden}
 /* 危险操作按钮配色（保留 id 不变） */
 #btn-init{background:transparent;border:1px solid color-mix(in srgb,var(--err) 60%,transparent);color:var(--err)}
 #btn-init:hover{background:color-mix(in srgb,var(--err) 14%,transparent)}
+/* ================= JSON 编辑器：行号 + overlay 语法高亮 + 状态栏 ================= */
+.cfg-editor{position:relative;margin-top:6px}
+.cfg-editor .cfg-ln{position:absolute;left:0;top:0;bottom:0;width:46px;overflow:hidden;text-align:right;padding:9px 8px 0 0;color:color-mix(in srgb,var(--fg) 42%,transparent);border-right:1px solid var(--line);background:color-mix(in srgb,var(--bg1) 42%,transparent);font:12px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;user-select:none;pointer-events:none;z-index:1}
+.cfg-editor pre{position:absolute;left:47px;top:0;right:0;bottom:0;margin:0;padding:9px 10px 9px 11px;overflow:hidden;white-space:pre;background:transparent;border:0;font:12px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;pointer-events:none;z-index:0}
+.cfg-editor textarea{position:relative;z-index:2;padding-left:58px;line-height:1.6;tab-size:2;background:transparent;color:transparent;caret-color:var(--fg)}
+.cfg-editor textarea::placeholder{color:color-mix(in srgb,var(--mut) 75%,transparent)}
+.cfg-editor textarea::selection{background:color-mix(in srgb,var(--acc) 34%,transparent);color:transparent}
+.cfg-bar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.cfg-bar .bad{color:var(--err)}
+.cfg-bar .good{color:var(--ok)}
+/* 语法高亮 token（客户端状态机生成，不依赖配置内容） */
+.tk-key{color:var(--acc2)}
+.tk-str{color:var(--ok)}
+.tk-num{color:var(--warn)}
+.tk-bool{color:var(--err)}
+.tk-null{color:var(--err)}
+/* ================= 弹窗细化：顶部装饰线 + 打开动效 ================= */
+#qr-modal .box,#kbd-help .box,#cmdk .box,#diff-modal .box{position:relative;overflow:hidden}
+#qr-modal .box::before,#kbd-help .box::before,#cmdk .box::before,#diff-modal .box::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc2),var(--acc) 55%,transparent);z-index:2}
+#qr-modal.open,#kbd-help.open,#cmdk.open,#diff-modal.open{animation:pop-in .16s ease}
+@keyframes pop-in{from{opacity:0;transform:scale(.965)}to{opacity:1;transform:none}}
 @media(max-width:640px){
 .hero{flex-direction:column}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg1) 88%,transparent);justify-content:space-around;border-top:1px solid var(--line)}

@@ -80,6 +80,13 @@ import assert from 'node:assert/strict';
   assert.ok(html.includes('id="o-tg-bot"') && html.includes('id="o-cf-token"') && html.includes('id="o-cf-usageapi"'), '凭据字段 id 必须保留');
   assert.ok(html.includes('id="n-proto"') && html.includes('id="n-test-uri"'), '代理测试字段 id 必须保留');
 
+  // 1.9) JSON 编辑器升级：行号列 + overlay 高亮层 + 状态栏 + 弹窗装饰
+  for (const 标记 of ['id="cfg-ln"', 'id="cfg-hl"', 'id="cfg-pos"', 'id="cfg-state"', '.cfg-editor textarea', '.tk-key', '.tk-str', '.tk-num', '@keyframes pop-in', 'id="cfg"']) {
+    assert.ok(html.includes(标记), `HTML/样式应包含编辑器组件 ${标记}`);
+  }
+  // textarea 须 wrap=off 才能与不换行的 <pre> 高亮层逐像素对齐
+  assert.ok(html.includes('<textarea id="cfg" rows="14" wrap="off"'), 'JSON 编辑器须 wrap=off');
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,
