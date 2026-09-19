@@ -3,7 +3,7 @@ import { 掩码敏感信息, 转义HTML } from '../../../core/html.js';
 // 运维 Tab：诊断、Telegram、Cloudflare 凭据、自定义优选 IP 与危险区。
 function 运维Tab(摘) {
   return `
-<section class="page" data-page="ops">
+<section class="page" id="page-ops" role="tabpanel" data-page="ops">
   <div class="card">
     <h2>诊断信息</h2>
     <div class="mono" id="diag"></div>

@@ -3,7 +3,7 @@ import { 转义HTML } from '../../../core/html.js';
 // 概览 Tab：首屏时钟、用量仪表、趋势图容器与访问日志说明。
 function 概览Tab(摘) {
   return `
-<section class="page on" data-page="overview">
+<section class="page on" id="page-overview" role="tabpanel" data-page="overview">
   <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
   <div class="card">
     <h2>请求用量</h2>

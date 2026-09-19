@@ -1,7 +1,7 @@
 // 节点与订阅 Tab：主节点、订阅链接、客户端格式与二维码弹层。
 function 节点Tab() {
   return `
-<section class="page" data-page="nodes">
+<section class="page" id="page-nodes" role="tabpanel" data-page="nodes">
   <div class="card">
     <h2>主节点</h2>
     <div class="mono" id="nlink-code"></div>
