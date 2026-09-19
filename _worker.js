@@ -554,9 +554,18 @@ var 二维码运行时 = `window.QRCode = (function () {
   return { generate: generate, generateSVG: generateSVG };
 })();`;
 
-// src/admin/ui.js
-var CSS = `
-:root{--bg1:#0b1020;--bg2:#131a2e;--bg3:#0e1424;--glass-bg:rgba(255,255,255,.04);--glass-line:rgba(255,255,255,.09);--fg:#e6e8ee;--mut:#8b93a7;--acc:#6e8bff;--acc2:#22d3ee;--ok:#3fb950;--err:#f85149;--r:18px;--shadow:0 12px 32px rgba(0,0,0,.35)}
+// src/admin/ui/theme.js
+var 深色令牌 = `:root{--bg1:#0b1020;--bg2:#131a2e;--bg3:#0e1424;--glass-bg:rgba(255,255,255,.04);--glass-line:rgba(255,255,255,.09);--fg:#e6e8ee;--mut:#8b93a7;--acc:#6e8bff;--acc2:#22d3ee;--ok:#3fb950;--err:#f85149;--r:18px;--shadow:0 12px 32px rgba(0,0,0,.35)}`;
+var 动效降级 = `@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}`;
+function 主题CSS() {
+  return "\n" + 深色令牌;
+}
+function 动效CSS() {
+  return 动效降级 + "\n";
+}
+
+// src/admin/ui/styles.js
+var 组件样式 = `
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;color:var(--fg);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;background:linear-gradient(160deg,var(--bg1),var(--bg2) 55%,var(--bg3));background-attachment:fixed}
@@ -622,216 +631,13 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{overflow-wrap:anywhe
 @media(max-width:640px){.hero{flex-direction:column}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:8;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(11,16,32,.85);backdrop-filter:blur(20px);justify-content:space-around}
 nav button{flex:1;padding:8px 6px}.wrap{padding-bottom:96px}}
-@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
 `;
-function 管理面板HTML(env, config_JSON) {
-  const 出站 = env.PROXYIP ? "manual(" + (String(env.PROXYIP).includes(",") ? "多候选" : 掩码敏感信息(String(env.PROXYIP))) + ")" : String(env.出站模式 || env.EGRESS_MODE || "auto");
-  const 摘 = {
-    host: config_JSON.HOST || "",
-    link: config_JSON.LINK || "",
-    subname: config_JSON.优选订阅生成?.SUBNAME || "edgetunnel",
-    token: config_JSON.优选订阅生成?.TOKEN || "",
-    出站,
-    path: config_JSON.完整节点路径 || "/",
-    协议类型: config_JSON.协议类型,
-    传输协议: config_JSON.传输协议,
-    gRPC模式: config_JSON.gRPC模式 || "gun",
-    Fingerprint: config_JSON.Fingerprint || "chrome",
-    ECH: !!config_JSON.ECH,
-    启用0RTT: !!config_JSON.启用0RTT,
-    TLS分片: config_JSON.TLS分片 || "",
-    ALPN: config_JSON.ALPN || "",
-    SS: { 加密方式: config_JSON.SS?.加密方式 || "aes-128-gcm", TLS: !!config_JSON.SS?.TLS },
-    反代: config_JSON.反代?.PROXYIP || "auto",
-    用量: { ...{ success: false, pages: 0, workers: 0, total: 0, max: 1e5 }, ...config_JSON.CF?.Usage },
-    TG: config_JSON.TG || { 启用: false, BotToken: null, ChatID: null },
-    CF: config_JSON.CF || {}
-  };
-  const 订阅链接 = "https://" + 摘.host + "/sub?token=" + encodeURIComponent(摘.token);
-  const sse = 转义HTML(摘.host);
-  const env只读行 = [
-    ["ADMIN", env.ADMIN ? "已配置" : "未配置"],
-    ["KEY", env.KEY ? 掩码敏感信息(String(env.KEY)) : "未配置"],
-    ["HOST", env.HOST || "（默认访问域名）"],
-    ["UUID", env.UUID || "（自动派生）"],
-    ["PROXYIP", env.PROXYIP ? 掩码敏感信息(String(env.PROXYIP)) : "（未配置）"],
-    ["出站模式/EGRESS_MODE", env.出站模式 || env.EGRESS_MODE || "auto"],
-    ["URL", env.URL || "nginx"],
-    ["PATH", env.PATH || "/"],
-    ["GO2SOCKS5", env.GO2SOCKS5 || "（未配置）"],
-    ["DEBUG", env.DEBUG ? "开启" : "关闭"],
-    ["BEST_SUB", env.BEST_SUB ? "开启" : "关闭"],
-    ["PRELOAD_RACE_DIAL", env.PRELOAD_RACE_DIAL ? "开启" : "关闭"],
-    ["PROXY_CONCURRENT_DIAL", env.PROXY_CONCURRENT_DIAL || "1"],
-    ["TCP_CONCURRENT_DIAL", env.TCP_CONCURRENT_DIAL || "2"]
-  ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join("");
-  return `<!DOCTYPE html>
-<html lang="zh-CN" data-theme="glass">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>edgetunnel 管理面板 · ${sse}</title>
-<style>${CSS}</style>
-</head>
-<body>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="kbd-help" role="dialog" aria-modal="true" aria-label="快捷键">
-  <div class="box">
-    <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
-    <table>
-      <tbody>
-        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
-        <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
-        <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
-        <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-<div class="wrap" id="top">
-<header>
-  <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
-  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
-</header>
-<nav>
-  <button type="button" class="on" data-tab="overview">概览</button>
-  <button type="button" data-tab="nodes">节点与订阅</button>
-  <button type="button" data-tab="config">配置</button>
-  <button type="button" data-tab="ops">运维</button>
-</nav>
+function 样式CSS() {
+  return 组件样式;
+}
 
-<section class="page on" data-page="overview">
-  <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
-  <div class="card">
-    <h2>请求用量</h2>
-    <div class="hero">
-      <div class="gauge"><svg viewBox="0 0 120 120" width="120" height="120">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="#2a3346" stroke-width="12"/>
-        <circle id="ubar-fill" cx="60" cy="60" r="50" fill="none" stroke="#2f81f7" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
-        <text id="utext" x="60" y="66" text-anchor="middle" font-size="12" fill="#e6e8ee"></text>
-      </svg></div>
-      <div style="flex:1;min-width:240px">
-        <div class="kvList">
-          <div class="item"><b>协议 / 传输</b>${转义HTML(摘.协议类型)} / ${转义HTML(摘.传输协议)}</div>
-          <div class="item"><b>gRPC 模式</b>${转义HTML(摘.gRPC模式)}</div>
-          <div class="item"><b>Fingerprint</b>${转义HTML(摘.Fingerprint)}</div>
-          <div class="item"><b>路径</b>${转义HTML(摘.path)}</div>
-          <div class="item"><b>出站模式</b>${转义HTML(摘.出站)}</div>
-          <div class="item"><b>反代</b>${转义HTML(摘.反代)}</div>
-          <div class="item"><b>ECH / 0RTT</b>${摘.ECH ? "开" : "关"} / ${摘.启用0RTT ? "开" : "关"}</div>
-          <div class="item"><b>SS</b>${转义HTML(摘.SS.加密方式)} / TLS ${摘.SS.TLS ? "开" : "关"}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="badges" id="badges"></div>
-  <div class="card">
-    <h2>近 30 天用量趋势</h2>
-    <div id="chart"><p class="dim">加载中…</p></div>
-    <div id="chart-tip" role="tooltip"></div>
-  </div>
-  <div class="card">
-    <h2>访问日志</h2>
-    <p class="dim">访问日志不再写入 KV；请在 Cloudflare 控制台 → Workers → 本 Worker → Logs 查看结构化 access 事件（<a href="https://developers.cloudflare.com/workers/observability/logs/" rel="noopener" target="_blank">文档</a>）。</p>
-  </div>
-</section>
-
-<section class="page" data-page="nodes">
-  <div class="card">
-    <h2>主节点</h2>
-    <div class="mono" id="nlink-code"></div>
-    <div class="row">
-      <button type="button" class="btn" id="btn-copy-link">复制链接</button>
-      <button type="button" class="btn ghost" id="btn-copy-sub">复制通用订阅</button>
-      <button type="button" class="btn ghost" id="btn-copy-clash">复制 Clash 原生</button>
-      <button type="button" class="btn ghost" id="btn-copy-singbox">复制 sing-box 原生</button>
-      <button type="button" class="btn ghost" id="btn-open-qr">查看二维码</button>
-    </div>
-    <div class="qr" id="qr" aria-label="节点二维码"></div>
-  </div>
-  <div class="card">
-    <h2>订阅链接</h2>
-    <div class="mono" id="sub-link"></div>
-    <p class="dim">订阅更新周期：每 3 小时提示一次；原生订阅为最小配置（Clash/sing-box），不含自定义分流规则。</p>
-  </div>
-  <div class="card">
-    <h2>客户端格式</h2>
-    <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
-    <div class="row" id="fmt-links"></div>
-  </div>
-  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
-    <div class="box">
-      <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
-      <div id="qr-big"></div>
-      <div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div>
-    </div>
-  </div>
-</section>
-
-<section class="page" data-page="config">
-  <div class="card">
-    <h2>常用字段</h2>
-    <div class="kvList">
-      <div><label>协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
-      <div><label>传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
-      <div><label>PATH</label><input id="c-PATH" /></div>
-      <div><label>Fingerprint</label><input id="c-Fingerprint" /></div>
-      <div><label>ALPN（空则不生成）</label><input id="c-ALPN" placeholder="h2" /></div>
-      <div><label>TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
-      <div class="row" style="grid-column:1/-1"><label><input id="c-ECH" type="checkbox" /> ECH</label><label><input id="c-启用0RTT" type="checkbox" /> 启用 0RTT</label></div>
-    </div>
-    <div class="row"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
-  </div>
-  <div class="card">
-    <h2>KV 全量配置（JSON）</h2>
-    <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
-    <label for="cfg">当前配置 JSON</label>
-    <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
-  </div>
-  <div class="card">
-    <h2>环境变量（只读）</h2>
-    <table><thead><tr><th scope="col" class="mn">变量</th><th scope="col">当前值</th></tr></thead><tbody>${env只读行}</tbody></table>
-  </div>
-</section>
-
-<section class="page" data-page="ops">
-  <div class="card">
-    <h2>诊断信息</h2>
-    <div class="mono" id="diag"></div>
-    <div class="row"><button type="button" class="btn ghost" id="btn-diag-copy">复制诊断 JSON</button><span class="dim" id="diag-note"></span></div>
-    <p class="dim" style="margin-top:10px">登录/写接口受 IP 限流（60 秒）与同源校验保护；会话绑定 UA 与 host，24 小时过期。</p>
-  </div>
-  <div class="card">
-    <h2>Telegram 通知</h2>
-    <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || "")) || "未配置")}" />
-    <label>ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ""))}" />
-    <div class="row"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
-  </div>
-  <div class="card">
-    <h2>Cloudflare API 凭据</h2>
-    <label>AccountID（留空保持不变）</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || "")) || "未配置")}" />
-    <label>APIToken（留空保持不变）</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || "")) || "未配置")}" />
-    <label>Email（备选认证）</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ""))}" />
-    <label>GlobalAPIKey（备选认证）</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || "")) || "未配置")}" />
-    <label>UsageAPI（可选，覆盖自动查询）</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ""))}" />
-    <p class="dim">凭据仅保存在服务端 KV；页面始终掩码展示。留空的字段不会被提交覆盖。</p>
-    <div class="row"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
-  </div>
-  <div class="card">
-    <h2>自定义优选 IP（ADD.txt）</h2>
-    <textarea id="o-add" rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
-    <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
-  </div>
-  <div class="card">
-    <h2>危险区</h2>
-    <div class="row"><button type="button" class="btn" id="btn-init">重置配置为默认值</button><span class="dim">将清空 KV cfg:{host}，恢复默认；请先备份。</span></div>
-  </div>
-</section>
-</div>
-<script>window.__ET__=${JSON.stringify(摘).replace(/</g, "\\u003c")};</script>
-<script>${二维码运行时}</script>
-<script>
+// src/admin/ui/client.js
+var 客户端脚本 = `
 'use strict';
 (function () {
   var S = window.__ET__;
@@ -1111,9 +917,247 @@ function 管理面板HTML(env, config_JSON) {
 
   renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
 })();
-</script>
+`;
+
+// src/admin/ui/tabs/overview.js
+function 概览Tab(摘) {
+  return `
+<section class="page on" data-page="overview">
+  <div class="clock" id="clock"><span class="t" id="clock-local">--:--:--</span><span class="dim" id="clock-utc">UTC --:--:--</span></div>
+  <div class="card">
+    <h2>请求用量</h2>
+    <div class="hero">
+      <div class="gauge"><svg viewBox="0 0 120 120" width="120" height="120">
+        <circle cx="60" cy="60" r="50" fill="none" stroke="#2a3346" stroke-width="12"/>
+        <circle id="ubar-fill" cx="60" cy="60" r="50" fill="none" stroke="#2f81f7" stroke-width="12" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"/>
+        <text id="utext" x="60" y="66" text-anchor="middle" font-size="12" fill="#e6e8ee"></text>
+      </svg></div>
+      <div style="flex:1;min-width:240px">
+        <div class="kvList">
+          <div class="item"><b>协议 / 传输</b>${转义HTML(摘.协议类型)} / ${转义HTML(摘.传输协议)}</div>
+          <div class="item"><b>gRPC 模式</b>${转义HTML(摘.gRPC模式)}</div>
+          <div class="item"><b>Fingerprint</b>${转义HTML(摘.Fingerprint)}</div>
+          <div class="item"><b>路径</b>${转义HTML(摘.path)}</div>
+          <div class="item"><b>出站模式</b>${转义HTML(摘.出站)}</div>
+          <div class="item"><b>反代</b>${转义HTML(摘.反代)}</div>
+          <div class="item"><b>ECH / 0RTT</b>${摘.ECH ? "开" : "关"} / ${摘.启用0RTT ? "开" : "关"}</div>
+          <div class="item"><b>SS</b>${转义HTML(摘.SS.加密方式)} / TLS ${摘.SS.TLS ? "开" : "关"}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="badges" id="badges"></div>
+  <div class="card">
+    <h2>近 30 天用量趋势</h2>
+    <div id="chart"><p class="dim">加载中…</p></div>
+    <div id="chart-tip" role="tooltip"></div>
+  </div>
+  <div class="card">
+    <h2>访问日志</h2>
+    <p class="dim">访问日志不再写入 KV；请在 Cloudflare 控制台 → Workers → 本 Worker → Logs 查看结构化 access 事件（<a href="https://developers.cloudflare.com/workers/observability/logs/" rel="noopener" target="_blank">文档</a>）。</p>
+  </div>
+</section>`;
+}
+
+// src/admin/ui/tabs/nodes.js
+function 节点Tab() {
+  return `
+<section class="page" data-page="nodes">
+  <div class="card">
+    <h2>主节点</h2>
+    <div class="mono" id="nlink-code"></div>
+    <div class="row">
+      <button type="button" class="btn" id="btn-copy-link">复制链接</button>
+      <button type="button" class="btn ghost" id="btn-copy-sub">复制通用订阅</button>
+      <button type="button" class="btn ghost" id="btn-copy-clash">复制 Clash 原生</button>
+      <button type="button" class="btn ghost" id="btn-copy-singbox">复制 sing-box 原生</button>
+      <button type="button" class="btn ghost" id="btn-open-qr">查看二维码</button>
+    </div>
+    <div class="qr" id="qr" aria-label="节点二维码"></div>
+  </div>
+  <div class="card">
+    <h2>订阅链接</h2>
+    <div class="mono" id="sub-link"></div>
+    <p class="dim">订阅更新周期：每 3 小时提示一次；原生订阅为最小配置（Clash/sing-box），不含自定义分流规则。</p>
+  </div>
+  <div class="card">
+    <h2>客户端格式</h2>
+    <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
+    <div class="row" id="fmt-links"></div>
+  </div>
+  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
+    <div class="box">
+      <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
+      <div id="qr-big"></div>
+      <div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div>
+    </div>
+  </div>
+</section>`;
+}
+
+// src/admin/ui/tabs/config.js
+function 配置Tab(摘, env只读行) {
+  return `
+<section class="page" data-page="config">
+  <div class="card">
+    <h2>常用字段</h2>
+    <div class="kvList">
+      <div><label>协议类型</label><select id="c-协议类型"><option>vless</option><option>trojan</option><option>ss</option></select></div>
+      <div><label>传输协议</label><select id="c-传输协议"><option>ws</option><option>grpc</option><option>xhttp</option></select></div>
+      <div><label>PATH</label><input id="c-PATH" /></div>
+      <div><label>Fingerprint</label><input id="c-Fingerprint" /></div>
+      <div><label>ALPN（空则不生成）</label><input id="c-ALPN" placeholder="h2" /></div>
+      <div><label>TLS 分片</label><select id="c-TLS分片"><option value="">关闭</option><option value="Shadowrocket">Shadowrocket</option><option value="Happ">Happ</option></select></div>
+      <div class="row" style="grid-column:1/-1"><label><input id="c-ECH" type="checkbox" /> ECH</label><label><input id="c-启用0RTT" type="checkbox" /> 启用 0RTT</label></div>
+    </div>
+    <div class="row"><button type="button" class="btn" id="btn-save-ess">保存常用字段</button><span class="dim">写入 KV cfg:{host}，跨区传播需时间</span></div>
+  </div>
+  <div class="card">
+    <h2>KV 全量配置（JSON）</h2>
+    <div class="row"><button type="button" class="btn" id="btn-save-json">保存到 KV</button><button type="button" class="btn ghost" id="btn-restore">恢复上一版本</button> <button type="button" class="btn ghost" id="btn-load-json">重新加载</button><button type="button" class="btn ghost" id="btn-cfg-export">导出到剪贴板</button><button type="button" class="btn ghost" id="btn-cfg-import">从剪贴板导入</button><span id="cfg-status" class="dim"></span></div>
+    <label for="cfg">当前配置 JSON</label>
+    <textarea id="cfg" rows="14" spellcheck="false" placeholder="点击『重新加载』获取当前生效配置…"></textarea>
+  </div>
+  <div class="card">
+    <h2>环境变量（只读）</h2>
+    <table><thead><tr><th scope="col" class="mn">变量</th><th scope="col">当前值</th></tr></thead><tbody>${env只读行}</tbody></table>
+  </div>
+</section>`;
+}
+
+// src/admin/ui/tabs/ops.js
+function 运维Tab(摘) {
+  return `
+<section class="page" data-page="ops">
+  <div class="card">
+    <h2>诊断信息</h2>
+    <div class="mono" id="diag"></div>
+    <div class="row"><button type="button" class="btn ghost" id="btn-diag-copy">复制诊断 JSON</button><span class="dim" id="diag-note"></span></div>
+    <p class="dim" style="margin-top:10px">登录/写接口受 IP 限流（60 秒）与同源校验保护；会话绑定 UA 与 host，24 小时过期。</p>
+  </div>
+  <div class="card">
+    <h2>Telegram 通知</h2>
+    <label>BotToken（留空保持不变）</label><input id="o-tg-bot" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.TG.BotToken || "")) || "未配置")}" />
+    <label>ChatID</label><input id="o-tg-chat" value="${转义HTML(String(摘.TG.ChatID || ""))}" />
+    <div class="row"><button type="button" class="btn" id="btn-save-tg">保存 TG</button></div>
+  </div>
+  <div class="card">
+    <h2>Cloudflare API 凭据</h2>
+    <label>AccountID（留空保持不变）</label><input id="o-cf-account" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.AccountID || "")) || "未配置")}" />
+    <label>APIToken（留空保持不变）</label><input id="o-cf-token" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.APIToken || "")) || "未配置")}" />
+    <label>Email（备选认证）</label><input id="o-cf-email" value="${转义HTML(String(摘.CF.Email || ""))}" />
+    <label>GlobalAPIKey（备选认证）</label><input id="o-cf-gkey" type="password" placeholder="${转义HTML(掩码敏感信息(String(摘.CF.GlobalAPIKey || "")) || "未配置")}" />
+    <label>UsageAPI（可选，覆盖自动查询）</label><input id="o-cf-usageapi" value="${转义HTML(String(摘.CF.UsageAPI || ""))}" />
+    <p class="dim">凭据仅保存在服务端 KV；页面始终掩码展示。留空的字段不会被提交覆盖。</p>
+    <div class="row"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
+  </div>
+  <div class="card">
+    <h2>自定义优选 IP（ADD.txt）</h2>
+    <textarea id="o-add" rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
+    <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
+  </div>
+  <div class="card">
+    <h2>危险区</h2>
+    <div class="row"><button type="button" class="btn" id="btn-init">重置配置为默认值</button><span class="dim">将清空 KV cfg:{host}，恢复默认；请先备份。</span></div>
+  </div>
+</section>`;
+}
+
+// src/admin/ui/index.js
+function 管理面板HTML(env, config_JSON) {
+  const 出站 = env.PROXYIP ? "manual(" + (String(env.PROXYIP).includes(",") ? "多候选" : 掩码敏感信息(String(env.PROXYIP))) + ")" : String(env.出站模式 || env.EGRESS_MODE || "auto");
+  const 摘 = {
+    host: config_JSON.HOST || "",
+    link: config_JSON.LINK || "",
+    subname: config_JSON.优选订阅生成?.SUBNAME || "edgetunnel",
+    token: config_JSON.优选订阅生成?.TOKEN || "",
+    出站,
+    path: config_JSON.完整节点路径 || "/",
+    协议类型: config_JSON.协议类型,
+    传输协议: config_JSON.传输协议,
+    gRPC模式: config_JSON.gRPC模式 || "gun",
+    Fingerprint: config_JSON.Fingerprint || "chrome",
+    ECH: !!config_JSON.ECH,
+    启用0RTT: !!config_JSON.启用0RTT,
+    TLS分片: config_JSON.TLS分片 || "",
+    ALPN: config_JSON.ALPN || "",
+    SS: { 加密方式: config_JSON.SS?.加密方式 || "aes-128-gcm", TLS: !!config_JSON.SS?.TLS },
+    反代: config_JSON.反代?.PROXYIP || "auto",
+    用量: { ...{ success: false, pages: 0, workers: 0, total: 0, max: 1e5 }, ...config_JSON.CF?.Usage },
+    TG: config_JSON.TG || { 启用: false, BotToken: null, ChatID: null },
+    CF: config_JSON.CF || {}
+  };
+  const sse = 转义HTML(摘.host);
+  const env只读行 = [
+    ["ADMIN", env.ADMIN ? "已配置" : "未配置"],
+    ["KEY", env.KEY ? 掩码敏感信息(String(env.KEY)) : "未配置"],
+    ["HOST", env.HOST || "（默认访问域名）"],
+    ["UUID", env.UUID || "（自动派生）"],
+    ["PROXYIP", env.PROXYIP ? 掩码敏感信息(String(env.PROXYIP)) : "（未配置）"],
+    ["出站模式/EGRESS_MODE", env.出站模式 || env.EGRESS_MODE || "auto"],
+    ["URL", env.URL || "nginx"],
+    ["PATH", env.PATH || "/"],
+    ["GO2SOCKS5", env.GO2SOCKS5 || "（未配置）"],
+    ["DEBUG", env.DEBUG ? "开启" : "关闭"],
+    ["BEST_SUB", env.BEST_SUB ? "开启" : "关闭"],
+    ["PRELOAD_RACE_DIAL", env.PRELOAD_RACE_DIAL ? "开启" : "关闭"],
+    ["PROXY_CONCURRENT_DIAL", env.PROXY_CONCURRENT_DIAL || "1"],
+    ["TCP_CONCURRENT_DIAL", env.TCP_CONCURRENT_DIAL || "2"]
+  ].map(([名, 值]) => `<tr><td class="mn">${名}</td><td>${转义HTML(String(值))}</td></tr>`).join("");
+  return `<!DOCTYPE html>
+<html lang="zh-CN" data-theme="glass">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>edgetunnel 管理面板 · ${sse}</title>
+<style>${主题CSS()}${样式CSS()}${动效CSS()}</style>
+</head>
+<body>
+<div id="toast" role="status" aria-live="polite"></div>
+${快捷键帮助浮层()}
+<div class="wrap" id="top">
+${页头(sse)}
+${主导航()}
+${概览Tab(摘)}
+${节点Tab()}
+${配置Tab(摘, env只读行)}
+${运维Tab(摘)}
+</div>
+<script>window.__ET__=${JSON.stringify(摘).replace(/</g, "\\u003c")};</script>
+<script>${二维码运行时}</script>
+<script>${客户端脚本}</script>
 </body>
 </html>`;
+}
+function 快捷键帮助浮层() {
+  return `<div id="kbd-help" role="dialog" aria-modal="true" aria-label="快捷键">
+  <div class="box">
+    <div class="row" style="justify-content:space-between"><b>键盘快捷键</b><button type="button" class="iconbtn" id="btn-kbd-close">关闭</button></div>
+    <table>
+      <tbody>
+        <tr><td><kbd>1</kbd>−<kbd>4</kbd></td><td>切换 Tab（概览/节点/配置/运维）</td></tr>
+        <tr><td><kbd>c</kbd></td><td>复制主节点链接</td></tr>
+        <tr><td><kbd>r</kbd></td><td>立即刷新用量</td></tr>
+        <tr><td><kbd>?</kbd></td><td>打开/关闭本帮助</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>`;
+}
+function 页头(sse) {
+  return `<header>
+  <h1>edgetunnel 管理面板 <small>${sse}</small></h1>
+  <div class="row"><button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">⟳ 刷新</button><a href="#top" style="color:var(--mut)">↑ 置顶</a> · <a href="/logout">退出登录</a></div>
+</header>`;
+}
+function 主导航() {
+  return `<nav>
+  <button type="button" class="on" data-tab="overview">概览</button>
+  <button type="button" data-tab="nodes">节点与订阅</button>
+  <button type="button" data-tab="config">配置</button>
+  <button type="button" data-tab="ops">运维</button>
+</nav>`;
 }
 
 // src/config/cache.js

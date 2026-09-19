@@ -1,4 +1,4 @@
-import { 管理面板HTML } from '../src/admin/ui.js';
+import { 管理面板HTML } from '../src/admin/ui/index.js';
 import assert from 'node:assert/strict';
 
 ;(async () => {
