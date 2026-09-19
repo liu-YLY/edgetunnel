@@ -8321,7 +8321,7 @@ async function 处理请求(request, env, ctx, 配置) {
         } else if (访问路径 === "admin/cf.json") {
           return new Response(JSON.stringify(request.cf, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/config") {
-          return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8" } });
+          return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { status: 200, headers: { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
         } else if (区分大小写访问路径 === "admin/api/usage-history") {
           return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
         } else if (区分大小写访问路径 === "admin/api/self-check") {
