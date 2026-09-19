@@ -3,6 +3,9 @@ demo/
 tmp/
 .workbuddy/
 
+# 头脑风暴可视化工作区（本地 mockup，不入库）
+.superpowers/
+
 # 依赖包
 node_modules/
 yarn.lock
