@@ -1,6 +1,6 @@
 name: Deploy to Cloudflare Workers
 
-# 推送 main 即构建校验并部署到生产 Worker（v20251104 / edgetunnel 服务）。
+# 推送 main 即构建校验并部署到生产 Worker（服务名 edgetunnel，域名 edt2.liuyong.eu.org）。
 # 凭据与 secrets 存放在 GitHub 仓库 Secrets：CLOUDFLARE_API_TOKEN / ADMIN / KEY / UUID / OFF_LOG。
 # 每次部署用 wrangler secret put 幂等重写生产 secrets，防止部署清空仪表盘凭据（自愈）。
 # 未配置 CLOUDFLARE_API_TOKEN 的 fork 自动跳过部署，只跑校验。
@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Check and Deploy v20251104
+    name: Check and Deploy edgetunnel
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
