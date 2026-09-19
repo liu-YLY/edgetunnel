@@ -169,4 +169,22 @@ async function 有限代理握手(action, connector, timeoutMs = 10000) {
 function socks5Connect(host, port, data, connector, proxy) { return 有限代理握手(c => socks5ConnectRaw(host, port, data, c, proxy), connector); }
 function httpConnect(host, port, data, tls, connector, proxy) { return 有限代理握手(c => httpConnectRaw(host, port, data, tls, c, proxy), connector); }
 
-export { httpConnect, isSpeedTestSite, socks5Connect, 创建请求TCP连接器, 有限代理握手, 构造WS本地204响应, 构造本地204响应 };
+// M1-P2：面板测速用 TCP 连通探测。只做 connect 计时（I/O 等待），不发送数据；
+// cloudflare:sockets 仍只在 dial.js 导入（MODULES.md 边界）。连接失败也返回耗时供前端展示。
+async function TCP连接延迟(主机, 端口, 超时毫秒 = 3000) {
+	const 开始 = performance.now();
+	try {
+		const socket = cloudflareConnect({ hostname: 主机, port: 端口 });
+		await Promise.race([
+			socket.opened,
+			new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 超时毫秒)),
+		]);
+		const ms = Math.max(0, Math.round(performance.now() - 开始));
+		setTimeout(() => { try { socket.close(); } catch (e) { } }, 0);
+		return { ok: true, ms };
+	} catch (error) {
+		return { ok: false, ms: Math.max(0, Math.round(performance.now() - 开始)), error: String(error?.message || error).slice(0, 120) };
+	}
+}
+
+export { httpConnect, isSpeedTestSite, socks5Connect, 创建请求TCP连接器, 有限代理握手, TCP连接延迟, 构造WS本地204响应, 构造本地204响应 };
