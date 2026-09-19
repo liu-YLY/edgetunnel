@@ -2,10 +2,10 @@ import { MD5MD5 } from './core/crypto.js';
 import { html1101, nginx, 登录页面 } from './admin/pages.js';
 import { 请求日志记录 } from './admin/panel.js';
 import { 管理面板HTML } from './admin/ui/index.js';
-import { 失效配置缓存 } from './config/cache.js';
+import { 失效配置缓存, 用量缓存 } from './config/cache.js';
 import { 全局读取配置, 读取config_JSON } from './config/index.js';
 import { 保存配置 } from './config/store.js';
-import { 读取用量历史 } from './services/usage-history.js';
+import { 读取用量历史, 写入用量快照 } from './services/usage-history.js';
 import { 执行自检 } from './services/self-check.js';
 import { Pages静态页面, Version, 特征码字典 } from './core/constants.js';
 import { log, 请求存储 } from './core/context.js';
@@ -148,7 +148,33 @@ async function 处理请求(request, env, ctx, 配置) {
 						try {
 							if (request.method !== 'POST') return new Response('请使用 POST JSON，凭据不能放在 URL', { status:405, headers:{ Allow:'POST' } });
                             const body = await 读取管理JSON(request);
-                            const Usage_JSON = await getCloudflareUsage(body.Email, body.GlobalAPIKey, body.AccountID, body.APIToken);
+                            // 面板只发送空对象：KV 里的凭据在配置对象中是掩码后的，无法回传前端。
+                            // 因此缺省时回退到 KV cf.json 的原始凭据，与后台自动刷新同口径；
+                            // 否则查询会因凭据为 undefined 直接返回 total:0，刷新按钮等于失效。
+                            let 查询凭据 = { Email: body.Email, GlobalAPIKey: body.GlobalAPIKey, AccountID: body.AccountID, APIToken: body.APIToken, UsageAPI: body.UsageAPI };
+                            const 凭据齐全 = 查询凭据.UsageAPI || 查询凭据.APIToken || 查询凭据.AccountID || (查询凭据.Email && 查询凭据.GlobalAPIKey);
+                            if (!凭据齐全) {
+                                try {
+                                    const CF_TXT = await env.KV.get('cf.json');
+                                    if (CF_TXT) { const c = JSON.parse(CF_TXT); 查询凭据 = { Email: c.Email, GlobalAPIKey: c.GlobalAPIKey, AccountID: c.AccountID, APIToken: c.APIToken, UsageAPI: c.UsageAPI }; }
+                                } catch (e) { /* 回退失败按未配置处理 */ }
+                            }
+                            if (!(查询凭据.UsageAPI || 查询凭据.APIToken || 查询凭据.AccountID || (查询凭据.Email && 查询凭据.GlobalAPIKey))) {
+                                return new Response(JSON.stringify({ success: false, error: '未配置 Cloudflare 查询凭据：请在运维页填写 APIToken 或 Email + GlobalAPIKey' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            }
+                            const Usage_JSON = 查询凭据.UsageAPI
+                                ? await (await fetch(查询凭据.UsageAPI, { signal: AbortSignal.timeout(8000) })).json()
+                                : await getCloudflareUsage(查询凭据.Email, 查询凭据.GlobalAPIKey, 查询凭据.AccountID, 查询凭据.APIToken);
+                            if (Usage_JSON?.success === false) {
+                                return new Response(JSON.stringify({ success: false, error: '用量查询失败：' + (Usage_JSON.msg || '未知原因') }), { status: 502, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            }
+                            // 手工刷新后立即生效：写快照 + 覆盖 isolate 内用量缓存，否则面板要等 60s TTL 才更新。
+                            ctx.waitUntil((async () => {
+                                try {
+                                    if (Usage_JSON?.total != null) await 写入用量快照(env, host, Usage_JSON);
+                                } catch (e) { /* 快照失败不影响本次返回 */ }
+                            })());
+                            用量缓存.set(host, { time: Date.now(), value: Usage_JSON });
 							return new Response(JSON.stringify(Usage_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
 						} catch (err) {
 							const errorResponse = { msg: '查询请求量失败，失败原因：' + err.message, error: err.message };

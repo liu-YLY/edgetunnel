@@ -59,6 +59,11 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   const tcBad = await call('/admin/api/tcp-check',{headers:{Cookie:cookie}});assert.equal(tcBad.status,400);
   const tcOk = await call('/admin/api/tcp-check?host=example.com&port=443',{headers:{Cookie:cookie}});assert.equal(tcOk.status,200);
   assert.ok('ok' in (await tcOk.json()),'tcp-check 缺 ok 字段');
+  // 用量刷新：未配置任何 CF 凭据时必须明确报 400，而不是 200 返回 total:0 让面板显示假数据。
+  const usageNoCred = await call('/admin/getCloudflareUsage',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'});
+  assert.equal(usageNoCred.status,400,'未配置凭据的用量刷新应返回 400');
+  assert.match((await usageNoCred.json()).error,/未配置/,'400 响应应说明缺少凭据');
+  assert.equal((await call('/admin/getCloudflareUsage',{method:'GET',headers:{Cookie:cookie}})).status,405,'用量查询只允许 POST');
   console.log('[PASS] workerd 登录/鉴权/配置校验/KV 写入/跨站拒绝/分帧 VLESS/Trojan/SS WebSocket→原生 TCP→回传');
  } finally { await mf?.dispose(); for(const s of sockets)s.destroy(); await new Promise(r=>echo.close(r)); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

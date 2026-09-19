@@ -5,7 +5,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 	const cfg = { "Content-Type": "application/json" };
 
 	try {
-		if (!AccountID && (!Email || !GlobalAPIKey)) return { success: false, pages: 0, workers: 0, total: 0, max: 100000 };
+		if (!AccountID && (!Email || !GlobalAPIKey)) return { success: false, pages: 0, workers: 0, total: 0, max: 100000, msg: '未配置 Cloudflare 查询凭据' };
 
 		if (!AccountID) {
 			const r = await fetch(`${API}/accounts`, {
@@ -55,7 +55,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
 
 	} catch (error) {
 		console.error('获取使用量错误:', error.message);
-		return { success: false, pages: 0, workers: 0, total: 0, max: 100000 };
+		return { success: false, pages: 0, workers: 0, total: 0, max: 100000, msg: error.message };
 	}
 }
 

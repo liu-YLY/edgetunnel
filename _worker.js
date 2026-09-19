@@ -1011,15 +1011,42 @@ var 客户端脚本 = `
     if (saved) { var b = document.querySelector('[data-tab="' + saved + '"]'); if (b) switchTab(b); }
   })();
 
+  // 用量显示：区分「实时查询成功」「仅有历史快照」「无数据」三态，
+  // 避免把"查不到"渲染成 "0 / 100,000 0.0%" 这种看似正常的假数据。
+  function 渲染用量(use, rows) {
+    var c = $('#ubar-fill'), t = $('#utext'), note = $('#usage-note');
+    var max = Number(use.max) > 0 ? Number(use.max) : 100000;
+    if (use.success) {
+      var total = Number(use.total) || 0;
+      if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, total / max)));
+      if (t) t.textContent = fmt(total) + ' / ' + fmt(max) + ' ' + ((total / max) * 100).toFixed(2) + '%';
+      if (note) note.textContent = '今日 UTC 00:00 至今：Workers ' + fmt(use.workers || 0) + ' + Pages ' + fmt(use.pages || 0) + ' · 比例按免费额度 ' + fmt(max) + '/天计';
+      return;
+    }
+    var last = rows && rows.length ? rows[rows.length - 1] : null;
+    if (last && last.total != null) {
+      var lmax = Number(last.max) > 0 ? Number(last.max) : max, ltotal = Number(last.total) || 0;
+      if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, ltotal / lmax)));
+      if (t) t.textContent = fmt(ltotal) + ' / ' + fmt(lmax) + '（快照）';
+      if (note) note.textContent = '实时查询不可用' + (use.msg ? '（' + use.msg + '）' : '') + '，当前显示最近快照 ' + (last.date || '') + '。在运维页填写凭据后点「立即刷新用量」可获取实时值。';
+      return;
+    }
+    if (c) c.setAttribute('stroke-dashoffset', '314');
+    if (t) t.textContent = '—';
+    if (note) note.textContent = '暂无用量数据' + (use.msg ? '：' + use.msg : '') + '。请在运维页填写 APIToken 或 Email + GlobalAPIKey 后点「立即刷新用量」。';
+  }
+
   // 概览
   function loadOverview() {
-    var use = S.用量 || {}, max = use.max || 1, total = use.total || 0;
-    var c = $('#ubar-fill'); if (c) c.setAttribute('stroke-dashoffset', String(314 - 314 * Math.min(1, total / max)));
-    var t = $('#utext'); if (t) t.textContent = fmt(total) + ' / ' + fmt(max) + ' ' + ((total / max) * 100).toFixed(1) + '%';
+    var use = S.用量 || {};
+    // 实时值可直接渲染；否则等历史快照到达再渲染，避免先闪一下"暂无数据"。
+    if (use.success) 渲染用量(use, []);
     取('/admin/api/usage-history').then(function (rows) {
+      rows = rows || [];
+      渲染用量(use, rows);
       骨架完毕('#chart');
       var box = $('#chart'); if (!box) return;
-      if (!rows || !rows.length) { box.innerHTML = '<p class="dim">暂无历史数据（下次用量刷新后写入）</p>'; return; }
+      if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（每次刷新用量后写入当日一条）</p>'; return; }
       var W = 640, H = 180, pad = 24;
       var maxV = rows.reduce(function (m, r) { return Math.max(m, r.total || 0); }, 1);
       var bw = (W - pad * 2) / rows.length, bars = '', ticks = '';
@@ -1031,7 +1058,7 @@ var 客户端脚本 = `
       });
       box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="近30天用量">' + bars + ticks + '</svg>';
       bindBarTips(box.querySelector('svg'));
-    }).catch(function (e) { 内联错误('#chart', '用量历史不可用：' + e.message, loadOverview); });
+    }).catch(function (e) { if (!use.success) 渲染用量(use, []); 内联错误('#chart', '用量历史不可用：' + e.message, loadOverview); });
   }
 
   // 概览增强：趋势图 hover tooltip（Task2）
@@ -1214,11 +1241,21 @@ var 客户端脚本 = `
     api('/admin/cf.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { toast('CF 凭据已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
   });
-  $('#btn-refresh-usage').addEventListener('click', function () {
-    api('/admin/getCloudflareUsage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      .then(function (r) { toast('用量结果：' + fmt(r.total) + ' / ' + fmt(r.max), true); })
-      .catch(function (e) { toast('刷新失败：' + e.message, false); });
-  });
+  // 真实的用量查询：写入 S.用量 后重绘概览（服务端会回退使用 KV 中已存凭据）。
+  function 刷新用量(静默) {
+    return api('/admin/getCloudflareUsage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function (r) {
+        S.用量 = r;
+        loadOverview();
+        toast('用量已刷新：' + fmt(r.total) + ' / ' + fmt(r.max), true);
+        return r;
+      })
+      .catch(function (e) {
+        toast((静默 ? '用量未更新：' : '刷新用量失败：') + e.message, false);
+        return null;
+      });
+  }
+  $('#btn-refresh-usage').addEventListener('click', function () { 刷新用量(false); });
   $('#btn-save-add').addEventListener('click', function () {
     fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: $('#o-add').value })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -1463,7 +1500,8 @@ var 客户端脚本 = `
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') loadOverview();
   });
-  $('#btn-refresh-top').addEventListener('click', function () { loadOverview(); loadNodes(); loadDiag(); toast('已刷新', true); });
+  // 页头刷新：用量走真实查询（此前只重绘，点"刷新"用量不会变），并刷新节点与诊断。
+  $('#btn-refresh-top').addEventListener('click', function () { loadNodes(); loadDiag(); 刷新用量(false); });
   loadDiag();
 
   renderBadges(); loadOverview(); loadNodes(); loadConfig(); loadOps();
@@ -1496,12 +1534,14 @@ function 概览Tab(摘) {
         </div>
       </div>
     </div>
+    <div class="dim" id="usage-note">用量口径：今日 UTC 00:00 至今（Workers + Pages Functions 请求数）</div>
   </div>
   <div class="badges" id="badges"></div>
   <div class="card">
     <h2>近 30 天用量趋势</h2>
     <div id="chart" data-skeleton><div class="sk" style="width:92%"></div><div class="sk" style="width:74%"></div></div>
     <div id="chart-tip" role="tooltip"></div>
+    <div class="dim">基于每日快照：仅记录当日有请求活动并触发用量刷新的日期，无活动日不会产生数据点。</div>
   </div>
   <div class="card">
     <h2>访问日志</h2>
@@ -2013,7 +2053,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
   const sum = (a) => a?.reduce((t, i) => t + (i?.sum?.requests || 0), 0) || 0;
   const cfg = { "Content-Type": "application/json" };
   try {
-    if (!AccountID && (!Email || !GlobalAPIKey)) return { success: false, pages: 0, workers: 0, total: 0, max: 1e5 };
+    if (!AccountID && (!Email || !GlobalAPIKey)) return { success: false, pages: 0, workers: 0, total: 0, max: 1e5, msg: "未配置 Cloudflare 查询凭据" };
     if (!AccountID) {
       const r = await fetch(`${API}/accounts`, {
         method: "GET",
@@ -2058,7 +2098,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
     return { success: true, pages, workers, total, max };
   } catch (error) {
     console.error("获取使用量错误:", error.message);
-    return { success: false, pages: 0, workers: 0, total: 0, max: 1e5 };
+    return { success: false, pages: 0, workers: 0, total: 0, max: 1e5, msg: error.message };
   }
 }
 
@@ -7894,7 +7934,32 @@ async function 处理请求(request, env, ctx, 配置) {
           try {
             if (request.method !== "POST") return new Response("请使用 POST JSON，凭据不能放在 URL", { status: 405, headers: { Allow: "POST" } });
             const body = await 读取管理JSON(request);
-            const Usage_JSON = await getCloudflareUsage(body.Email, body.GlobalAPIKey, body.AccountID, body.APIToken);
+            let 查询凭据 = { Email: body.Email, GlobalAPIKey: body.GlobalAPIKey, AccountID: body.AccountID, APIToken: body.APIToken, UsageAPI: body.UsageAPI };
+            const 凭据齐全 = 查询凭据.UsageAPI || 查询凭据.APIToken || 查询凭据.AccountID || 查询凭据.Email && 查询凭据.GlobalAPIKey;
+            if (!凭据齐全) {
+              try {
+                const CF_TXT = await env.KV.get("cf.json");
+                if (CF_TXT) {
+                  const c = JSON.parse(CF_TXT);
+                  查询凭据 = { Email: c.Email, GlobalAPIKey: c.GlobalAPIKey, AccountID: c.AccountID, APIToken: c.APIToken, UsageAPI: c.UsageAPI };
+                }
+              } catch (e) {
+              }
+            }
+            if (!(查询凭据.UsageAPI || 查询凭据.APIToken || 查询凭据.AccountID || 查询凭据.Email && 查询凭据.GlobalAPIKey)) {
+              return new Response(JSON.stringify({ success: false, error: "未配置 Cloudflare 查询凭据：请在运维页填写 APIToken 或 Email + GlobalAPIKey" }), { status: 400, headers: { "Content-Type": "application/json;charset=utf-8" } });
+            }
+            const Usage_JSON = 查询凭据.UsageAPI ? await (await fetch(查询凭据.UsageAPI, { signal: AbortSignal.timeout(8e3) })).json() : await getCloudflareUsage(查询凭据.Email, 查询凭据.GlobalAPIKey, 查询凭据.AccountID, 查询凭据.APIToken);
+            if (Usage_JSON?.success === false) {
+              return new Response(JSON.stringify({ success: false, error: "用量查询失败：" + (Usage_JSON.msg || "未知原因") }), { status: 502, headers: { "Content-Type": "application/json;charset=utf-8" } });
+            }
+            ctx.waitUntil((async () => {
+              try {
+                if (Usage_JSON?.total != null) await 写入用量快照(env, host, Usage_JSON);
+              } catch (e) {
+              }
+            })());
+            用量缓存.set(host, { time: Date.now(), value: Usage_JSON });
             return new Response(JSON.stringify(Usage_JSON, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
           } catch (err) {
             const errorResponse = { msg: "查询请求量失败，失败原因：" + err.message, error: err.message };

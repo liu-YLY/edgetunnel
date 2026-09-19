@@ -26,12 +26,14 @@ function 概览Tab(摘) {
         </div>
       </div>
     </div>
+    <div class="dim" id="usage-note">用量口径：今日 UTC 00:00 至今（Workers + Pages Functions 请求数）</div>
   </div>
   <div class="badges" id="badges"></div>
   <div class="card">
     <h2>近 30 天用量趋势</h2>
     <div id="chart" data-skeleton><div class="sk" style="width:92%"></div><div class="sk" style="width:74%"></div></div>
     <div id="chart-tip" role="tooltip"></div>
+    <div class="dim">基于每日快照：仅记录当日有请求活动并触发用量刷新的日期，无活动日不会产生数据点。</div>
   </div>
   <div class="card">
     <h2>访问日志</h2>
