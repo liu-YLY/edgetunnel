@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "node build.js --force --out _worker.js",
-    "test": "node scripts/test-modules.cjs && node --import ./scripts/register-test-loader.mjs scripts/test-config.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-subscribe.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-regression.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-usage-history.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-qr.mjs",
+    "test": "node scripts/test-modules.cjs && node --import ./scripts/register-test-loader.mjs scripts/test-config.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-subscribe.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-regression.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-usage-history.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-qr.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs",
     "test:runtime": "node scripts/test-runtime.cjs",
     "check": "node scripts/verify.js && npm test",
     "dev": "wrangler dev --env staging",

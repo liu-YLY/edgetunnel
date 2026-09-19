@@ -1,6 +1,7 @@
 import { MD5MD5 } from './core/crypto.js';
 import { html1101, nginx, 登录页面 } from './admin/pages.js';
-import { 管理面板配置页HTML, 请求日志记录 } from './admin/panel.js';
+import { 请求日志记录 } from './admin/panel.js';
+import { 管理面板HTML } from './admin/ui.js';
 import { 失效配置缓存 } from './config/cache.js';
 import { 全局读取配置, 读取config_JSON } from './config/index.js';
 import { 保存配置 } from './config/store.js';
@@ -331,12 +332,12 @@ async function 处理请求(request, env, ctx, 配置) {
 					} else if (区分大小写访问路径 === 'admin/api/usage-history') {// 用量历史（30 天快照，会话鉴权已在上方完成）
 						return new Response(JSON.stringify(await 读取用量历史(env, host), null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (区分大小写访问路径 === 'admin/config') {// M1-P0 配置页（复用登录 cookie 鉴权）
-						return new Response(管理面板配置页HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+						return new Response(管理面板HTML(env, config_JSON), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
 					if (env.REMOTE_ADMIN === 'true') return fetch(Pages静态页面 + '/admin' + url.search, { signal:AbortSignal.timeout(8000) });
-                    return new Response(管理面板配置页HTML(env, config_JSON), { headers:{ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Frame-Options':'DENY', 'Referrer-Policy':'no-referrer' } });
+                    return new Response(管理面板HTML(env, config_JSON), { headers:{ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Frame-Options':'DENY', 'Referrer-Policy':'no-referrer' } });
 				} else if (访问路径 === 'logout' || uuidRegex.test(访问路径)) {//清除cookie并跳转到登录页面
 					const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
 					响应.headers.set('Set-Cookie', 'auth=; Path=/; Max-Age=0; HttpOnly');
