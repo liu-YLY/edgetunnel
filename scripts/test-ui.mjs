@@ -71,6 +71,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
   }
 
+  // 5) 配置编辑器增强（内联校验 / diff 预览）
+  for (const 标记 of ['id="cfg-check"', 'id="diff-modal"', 'id="diff-view"', 'id="btn-diff-confirm"']) {
+    assert.ok(html.includes(标记), `HTML 应包含 ${标记}`);
+  }
+
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
 })().catch((e) => { console.error('[test-ui] FAIL:', e); process.exit(1); });

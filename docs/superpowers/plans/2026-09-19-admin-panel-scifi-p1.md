@@ -930,6 +930,22 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
   }
 ```
 
+- [ ] **Step 1.5: 加"内联脚本语法"断言（永久守卫模板字符串转义类缺陷）**
+
+背景：`client.js` 是模板字符串，内部代码里的 `'\n'`、`/[\s]/` 若只写单反斜杠，求值后会变成真换行/丢掉 `\s`，生成的 `<script>` 会语法错误；而 `verify.js` 的 `node --check` 只校验外层 bundle，**抓不到**。Task 5 曾真实触发该缺陷，故固化为断言。
+
+```js
+  // 5) 每个内联 <script> 段都必须语法正确（覆盖 client.js 模板字符串转义问题）
+  const 内联段 = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  assert.ok(内联段.length >= 3, `应有至少 3 个内联脚本段，实际 ${内联段.length}`);
+  内联段.forEach((段, i) => {
+    try { new Function(段); } catch (e) { assert.fail(`第 ${i + 1} 个内联脚本语法错误：${e.message}`); }
+  });
+```
+
+Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs`
+Expected: PASS（若此时 FAIL，说明已有内联脚本语法错误，必须先修好再继续）。
+
 - [ ] **Step 2: 跑测试确认失败**
 
 Expected: FAIL（`class="sk"`）。
