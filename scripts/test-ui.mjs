@@ -31,6 +31,11 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(id), `HTML 应包含概览增强元素 ${id}`);
   }
 
+  // 1.3) 节点体验增强元素
+  for (const 标记 of ['id="qr-modal"', 'id="qr-big"', 'id="btn-qr-download"', 'id="btn-open-qr"']) {
+    assert.ok(html.includes(标记), `HTML 应包含节点增强元素 ${标记}`);
+  }
+
   // 3) XSS：恶意值必须被转义
   const 恶意 = {
     ...正常配置,
