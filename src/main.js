@@ -1,7 +1,7 @@
 import { MD5MD5 } from './core/crypto.js';
 import { html1101, nginx, 登录页面 } from './admin/pages.js';
 import { 请求日志记录 } from './admin/panel.js';
-import { 管理面板HTML } from './admin/ui.js';
+import { 管理面板HTML } from './admin/ui/index.js';
 import { 失效配置缓存 } from './config/cache.js';
 import { 全局读取配置, 读取config_JSON } from './config/index.js';
 import { 保存配置 } from './config/store.js';
