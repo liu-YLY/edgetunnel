@@ -946,6 +946,23 @@ git commit -m "feat(admin): 配置编辑器增强（内联校验、保存前 dif
 Run: `node --import ./scripts/register-test-loader.mjs scripts/test-ui.mjs`
 Expected: PASS（若此时 FAIL，说明已有内联脚本语法错误，必须先修好再继续）。
 
+- [ ] **Step 1.6: 加"元素 id 引用"断言（执行期补入，守卫运行时崩溃）**
+
+背景：`client.js` 里任何 `$('#x').addEventListener(...)` 若 `#x` 不存在，都会在运行时抛 `null.addEventListener` 而中断整个脚本（面板直接不可用，且静态测试原本抓不到）。执行 Task 6 时补入此断言。
+
+```js
+  // 8) client.js 引用的元素 id 必须都出现在产物 HTML 中
+  const 客户端源码 = readFileSync(new URL('../src/admin/ui/client.js', import.meta.url), 'utf8');
+  const 引用id = new Set([
+    ...[...客户端源码.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]),
+    ...[...客户端源码.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]),
+  ]);
+  const 缺失id = [...引用id].filter((x) => !html.includes(`id="${x}"`));
+  assert.deepEqual(缺失id, [], `client.js 引用了产物中不存在的 id：${缺失id.join(', ')}`);
+```
+
+需在文件头补 `import { readFileSync } from 'node:fs';`。
+
 - [ ] **Step 2: 跑测试确认失败**
 
 Expected: FAIL（`class="sk"`）。

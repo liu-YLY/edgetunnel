@@ -1,4 +1,5 @@
 import { 管理面板HTML } from '../src/admin/ui/index.js';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 ;(async () => {
@@ -87,6 +88,16 @@ import assert from 'node:assert/strict';
   内联段.forEach((段, i) => {
     try { new Function(段); } catch (e) { assert.fail(`第 ${i + 1} 个内联脚本语法错误：${e.message}`); }
   });
+
+  // 8) client.js 引用的元素 id 必须都出现在产物 HTML 中，
+  //    否则运行时会 null.addEventListener 崩溃（静态断言，无需浏览器）
+  const 客户端源码 = readFileSync(new URL('../src/admin/ui/client.js', import.meta.url), 'utf8');
+  const 引用id = new Set([
+    ...[...客户端源码.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]),
+    ...[...客户端源码.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]),
+  ]);
+  const 缺失id = [...引用id].filter((x) => !html.includes(`id="${x}"`));
+  assert.deepEqual(缺失id, [], `client.js 引用了产物中不存在的 id：${缺失id.join(', ')}`);
 
   console.log('[test-ui] ui.html 结构 / XSS 断言通过');
   process.exit(0);
