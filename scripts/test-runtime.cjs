@@ -65,6 +65,26 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   assert.equal(usageNoCred.status,400,'未配置凭据的用量刷新应返回 400');
   assert.match((await usageNoCred.json()).error,/未配置/,'400 响应应说明缺少凭据');
   assert.equal((await call('/admin/getCloudflareUsage',{method:'GET',headers:{Cookie:cookie}})).status,405,'用量查询只允许 POST');
+  // 优选：面板三张卡必须真实下发（登录后自查的自动化版本），且不得再引用上游远程面板域名。
+  const adminHtml = await (await call('/admin',{headers:{Cookie:cookie}})).text();
+  for (const 标记 of ['id="o-pref-api"','id="btn-verify-api"','id="btn-api-to-add"','id="o-lib-random"','id="o-lib-count"','id="o-lib-port"','id="btn-save-lib"','id="btn-o-test-add"','批量测速并排序']) {
+    assert.ok(adminHtml.includes(标记),`/admin 缺优选元素 ${标记}`);
+  }
+  assert.ok(!adminHtml.includes('edt-pages.github.io'),'/admin 不应再引用上游远程面板域名');
+  // /admin/getADDAPI：面板「验证优选 API」按钮依赖的路由，鉴权与参数校验必须可预期。
+  assert.equal((await call('/admin/getADDAPI?url=not-a-url')).status,302,'未登录访问优选 API 验证应跳登录');
+  assert.equal((await call('/admin/getADDAPI',{headers:{Cookie:cookie}})).status,403,'缺 url 的优选 API 验证应 403');
+  const apiBad = await call('/admin/getADDAPI?url=not-a-url',{headers:{Cookie:cookie}});
+  assert.equal(apiBad.status,500,'非法 URL 应 500');
+  assert.match((await apiBad.json()).msg,/验证优选API失败/,'失败响应应说明原因');
+  // 本地 IP 库表单的写路径：GET 生效配置 → 改字段 → POST /admin/config，必须被校验接受/拒绝。
+  const libOk = await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({优选订阅生成:{本地IP库:{随机IP:false,随机数量:8,指定端口:8443}}})});
+  assert.equal(libOk.status,200,'本地 IP 库保存应成功');
+  const libSaved = await (await mf.getKVNamespace('KV')).get('cfg:runtime.example','json');
+  assert.equal(libSaved.优选订阅生成.本地IP库.随机数量,8,'本地 IP 库应写入 KV');
+  assert.equal(libSaved.优选订阅生成.本地IP库.指定端口,8443,'指定端口应写入 KV');
+  const libBad = await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({优选订阅生成:{本地IP库:{随机IP:false,随机数量:300,指定端口:-1}}})});
+  assert.equal(libBad.status,400,'随机数量越界必须被服务端拒绝');
   console.log('[PASS] workerd 登录/鉴权/配置校验/KV 写入/跨站拒绝/分帧 VLESS/Trojan/SS WebSocket→原生 TCP→回传');
  } finally { await mf?.dispose(); for(const s of sockets)s.destroy(); await new Promise(r=>echo.close(r)); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
