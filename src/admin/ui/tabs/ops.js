@@ -33,10 +33,10 @@ function 运维Tab(摘) {
   <div class="card">
     <h2>优选 API</h2>
     <div class="fld-grid">
-      <div class="field" style="grid-column:1/-1"><label class="ctl" for="o-pref-api">API 地址</label><input id="o-pref-api" type="text" placeholder="https://example.com/ip.txt 或 sub://订阅生成器地址" spellcheck="false" /><span class="hint">仅验证解析结果，不写入配置；通过后可把该行原样写进下方 ADD.txt，由订阅时解析</span></div>
+      <div class="field" style="grid-column:1/-1"><label class="ctl" for="o-pref-api">API 地址</label><input id="o-pref-api" type="text" placeholder="https://example.com/ip.txt 或 sub://订阅生成器地址" spellcheck="false" /><span class="hint">验证只读取解析结果；点「写入 ADD.txt」把解析出的 IP 追加到下方编辑器（仍需手动保存）</span></div>
       <div class="field"><label class="ctl" for="o-pref-port">默认端口</label><input id="o-pref-port" type="text" inputmode="numeric" value="443" /><span class="hint">结果行内已带端口时以行内为准</span></div>
     </div>
-    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-verify-api">验证优选 API</button><span class="pill" id="o-api-result">未验证</span></div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-verify-api">验证优选 API</button><button type="button" class="btn ghost" id="btn-api-to-add">写入 ADD.txt</button><span class="pill" id="o-api-result">未验证</span></div>
     <div class="mono" id="o-api-out" style="display:none;margin:8px 0 0;white-space:pre-wrap"></div>
   </div>
   <div class="card">

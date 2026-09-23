@@ -632,27 +632,53 @@ const 客户端脚本 = `
   }
   function 设文本(sel, 文案) { var el = $(sel); if (el) el.textContent = 文案; }
 
-  // —— 优选 API 验证：只读校验，不写配置。通过后可把该行原样写进 ADD.txt 由订阅时解析。——
+  // —— 优选 API 验证：只读校验，不写配置。通过后可一键把解析结果追加进 ADD.txt 编辑器。——
+  var 优选API结果 = null;
   $('#btn-verify-api').addEventListener('click', function () {
     var 地址 = $('#o-pref-api').value.trim();
     if (!地址) { toast('请先填写优选 API 地址', false); return; }
     var 端口 = $('#o-pref-port').value.trim() || '443';
     var out = $('#o-api-out');
+    优选API结果 = null;
     设徽章('#o-api-result', 'run', '验证中…');
     if (out) { out.textContent = ''; out.style.display = 'none'; }
     取('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
       .then(function (r) {
         if (!r || !r.success) throw new Error((r && r.msg) || '接口未返回可用结果');
         var data = r.data || [];
+        优选API结果 = data;
         设徽章('#o-api-result', data.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
         if (out) { out.textContent = data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
         toast('优选 API 验证通过：' + data.length + ' 条', data.length > 0);
       })
       .catch(function (e) {
+        优选API结果 = null;
         设徽章('#o-api-result', 'err', '验证失败');
         if (out) { out.textContent = e.message; out.style.display = ''; }
         toast('验证失败：' + e.message, false);
       });
+  });
+  // 追加写入只改编辑器内容，不碰 KV：仍需用户确认后点「保存优选 IP」。
+  $('#btn-api-to-add').addEventListener('click', function () {
+    if (!优选API结果 || !优选API结果.length) { toast('请先验证优选 API', false); return; }
+    var ta = $('#o-add');
+    var 已有 = {};
+    String(ta.value || '').split(/\\r?\\n/).forEach(function (line) {
+      var body = line.trim().split('#')[0].trim();
+      if (body) 已有[body] = 1;
+    });
+    var 新增 = [];
+    优选API结果.forEach(function (item) {
+      var body = String(item).split('#')[0].trim();
+      if (!body || 已有[body]) return;
+      已有[body] = 1;
+      新增.push(item);
+    });
+    if (!新增.length) { toast('解析结果已全部存在，无需写入', false); return; }
+    var 原值 = ta.value.replace(/\\s+$/, '');
+    ta.value = (原值 ? 原值 + '\\n' : '') + 新增.join('\\n');
+    解析优选IP(ta.value);
+    toast('已追加 ' + 新增.length + ' 条，确认后点「保存优选 IP」', true);
   });
 
   // —— 本地 IP 库：读的是生效配置，写的是 KV cfg:{host}（与「常用字段」同一入口）——
