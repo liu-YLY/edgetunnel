@@ -52,6 +52,14 @@ import assert from 'node:assert/strict';
     assert.ok(html.includes(类名), `样式应包含 ${类名}`);
   }
 
+  // 1.5.1) 优选：API 验证 / 本地 IP 库 / 批量测速排序（面板内入口，后端复用既有路由）
+  for (const 标记 of ['id="o-pref-api"', 'id="o-pref-port"', 'id="btn-verify-api"', 'id="o-api-result"', 'id="o-api-out"', 'id="o-lib-random"', 'id="o-lib-count"', 'id="o-lib-port"', 'id="btn-save-lib"', 'id="o-lib-note"', 'id="o-add-test-note"']) {
+    assert.ok(html.includes(标记), `HTML 应包含优选元素 ${标记}`);
+  }
+  assert.ok(html.includes('批量测速并排序'), 'ADD.txt 测速按钮文案应为批量测速并排序');
+  // 测速结果与 API 结果都是多行文本：容器必须保留换行/分行渲染，否则会被折叠成一行
+  assert.ok(/id="o-api-out"[^>]*white-space:pre-wrap/.test(html), '优选 API 结果容器须保留换行');
+
   // 1.6) 用量卡说明 + SVG 走主题变量（硬编码浅色会让浅色主题下的数值不可见）
   for (const 标记 of ['id="usage-note"', '.g-text', '.g-fill', '.g-track', '.g-base', '#chart rect{fill:var(--acc)}']) {
     assert.ok(html.includes(标记), `HTML/样式应包含 ${标记}`);

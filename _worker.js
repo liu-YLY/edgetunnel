@@ -1449,25 +1449,101 @@ var 客户端脚本 = `
       var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
       if (typeof t === 'string') { $('#o-add').value = t; 解析优选IP(t); }
     }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
+    加载优选配置().catch(function (e) { 设文本('#o-lib-note', '优选配置加载失败：' + e.message); });
+  }
+  function 设文本(sel, 文案) { var el = $(sel); if (el) el.textContent = 文案; }
+
+  // —— 优选 API 验证：只读校验，不写配置。通过后可把该行原样写进 ADD.txt 由订阅时解析。——
+  $('#btn-verify-api').addEventListener('click', function () {
+    var 地址 = $('#o-pref-api').value.trim();
+    if (!地址) { toast('请先填写优选 API 地址', false); return; }
+    var 端口 = $('#o-pref-port').value.trim() || '443';
+    var out = $('#o-api-out');
+    设徽章('#o-api-result', 'run', '验证中…');
+    if (out) { out.textContent = ''; out.style.display = 'none'; }
+    取('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
+      .then(function (r) {
+        if (!r || !r.success) throw new Error((r && r.msg) || '接口未返回可用结果');
+        var data = r.data || [];
+        设徽章('#o-api-result', data.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
+        if (out) { out.textContent = data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
+        toast('优选 API 验证通过：' + data.length + ' 条', data.length > 0);
+      })
+      .catch(function (e) {
+        设徽章('#o-api-result', 'err', '验证失败');
+        if (out) { out.textContent = e.message; out.style.display = ''; }
+        toast('验证失败：' + e.message, false);
+      });
+  });
+
+  // —— 本地 IP 库：读的是生效配置，写的是 KV cfg:{host}（与「常用字段」同一入口）——
+  function 加载优选配置() {
+    return 取('/admin/config.json').then(function (cfg) {
+      var 生成 = (cfg && cfg.优选订阅生成) || {}, 库 = 生成.本地IP库 || {};
+      if ($('#o-lib-random')) $('#o-lib-random').checked = !!库.随机IP;
+      if ($('#o-lib-count')) $('#o-lib-count').value = 库.随机数量 != null ? 库.随机数量 : 16;
+      if ($('#o-lib-port')) $('#o-lib-port').value = 库.指定端口 != null ? 库.指定端口 : -1;
+      设文本('#o-lib-note', 生成.local ? '当前：本地优选地址' : '当前：优选订阅生成器（SUB）');
+    });
+  }
+  $('#btn-save-lib').addEventListener('click', function () {
+    var 数量 = Number($('#o-lib-count').value.trim()), 端口 = Number($('#o-lib-port').value.trim());
+    if (!Number.isInteger(数量) || 数量 < 1 || 数量 > 100) { toast('随机数量须为 1–100 的整数', false); return; }
+    if (!Number.isInteger(端口) || (端口 !== -1 && (端口 < 1 || 端口 > 65535))) { toast('指定端口须为 -1 或 1–65535', false); return; }
+    取('/admin/config.json').then(function (cfg) {
+      cfg.优选订阅生成 = cfg.优选订阅生成 || {};
+      cfg.优选订阅生成.本地IP库 = cfg.优选订阅生成.本地IP库 || {};
+      cfg.优选订阅生成.本地IP库.随机IP = $('#o-lib-random').checked;
+      cfg.优选订阅生成.本地IP库.随机数量 = 数量;
+      cfg.优选订阅生成.本地IP库.指定端口 = 端口;
+      return api('/admin/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    }).then(function () { toast('本地 IP 库已保存', true); 设文本('#o-lib-note', '已保存到 KV cfg:{host}'); })
+      .catch(function (e) { toast('保存失败：' + e.message, false); });
+  });
+
+  // —— ADD.txt 批量测速：并发池打 /admin/api/tcp-check，按建连延迟升序，不可达置后 ——
+  var 测速上限 = 100, 测速并发 = 6;
+  function 渲染测速结果(排序) {
+    var out = $('#o-add-test-out'); if (!out) return;
+    while (out.firstChild) out.removeChild(out.firstChild);
+    排序.forEach(function (r, i) {
+      var d = document.createElement('div'); d.className = 'chk-row';
+      var b = document.createElement('b'); b.textContent = '#' + (i + 1);
+      var s = document.createElement('span');
+      s.textContent = r.host + ':' + r.port + (r.ok ? ('  ' + r.ms + ' ms') : ('  不可达' + (r.error ? '（' + r.error + '）' : '')));
+      if (!r.ok) s.className = 'bad';
+      d.appendChild(b); d.appendChild(s); out.appendChild(d);
+    });
+    out.style.display = '';
   }
   $('#btn-o-test-add').addEventListener('click', function () {
-    var list = 优选IP条目.slice(0, 10);
-    var out = $('#o-add-test-out');
-    if (out) { out.textContent = ''; out.style.display = ''; }
-    if (!list.length) { toast('无可用条目', false); return; }
-    list.forEach(function (e) {
-      取('/admin/api/tcp-check?host=' + encodeURIComponent(e.host) + '&port=' + encodeURIComponent(e.port))
-        .then(function (r) { 追加连通结果(e, r && r.ok, r ? (r.ms != null ? r.ms : '') : '', (r && !r.ok && r.error) || null); })
-        .catch(function (err) { 追加连通结果(e, false, '', err.message || '请求失败'); });
+    var 待测 = 优选IP条目.slice(0, 测速上限), out = $('#o-add-test-out');
+    if (out) { while (out.firstChild) out.removeChild(out.firstChild); out.style.display = 'none'; }
+    if (!待测.length) { toast('无可用条目', false); return; }
+    var rows = new Array(待测.length), 队列 = 待测.map(function (e, i) { return { e: e, i: i }; }), 已完成 = 0;
+    var 截断提示 = 优选IP条目.length > 待测.length ? ('（仅测前 ' + 测速上限 + ' 条）') : '';
+    设文本('#o-add-test-note', '测速中 0/' + 待测.length + 截断提示);
+    function 跑一个() {
+      var job = 队列.shift();
+      if (!job) return Promise.resolve();
+      return 取('/admin/api/tcp-check?host=' + encodeURIComponent(job.e.host) + '&port=' + encodeURIComponent(job.e.port))
+        .then(function (r) { rows[job.i] = { host: job.e.host, port: job.e.port, ok: !!(r && r.ok), ms: r && r.ms != null ? r.ms : null, error: r && r.error }; })
+        .catch(function (err) { rows[job.i] = { host: job.e.host, port: job.e.port, ok: false, ms: null, error: err.message || '请求失败' }; })
+        .then(function () { 已完成++; 设文本('#o-add-test-note', '测速中 ' + 已完成 + '/' + 待测.length + 截断提示); return 跑一个(); });
+    }
+    var 工人 = [];
+    for (var k = 0; k < Math.min(测速并发, 待测.length); k++) 工人.push(跑一个());
+    Promise.all(工人).then(function () {
+      var 排序 = rows.slice().sort(function (a, b) {
+        if (a.ok !== b.ok) return a.ok ? -1 : 1;
+        return (a.ms == null ? Infinity : a.ms) - (b.ms == null ? Infinity : b.ms);
+      });
+      渲染测速结果(排序);
+      var 可用 = 排序.filter(function (r) { return r.ok; }).length;
+      设文本('#o-add-test-note', '可用 ' + 可用 + '/' + 排序.length + 截断提示 + ' · 已按延迟升序');
+      toast('测速完成：可用 ' + 可用 + '/' + 排序.length, 可用 > 0);
     });
   });
-  function 追加连通结果(e, ok, ms, errtext) {
-    var out = $('#o-add-test-out'); if (!out) return;
-    var line;
-    if (ok) line = e.host + ':' + e.port + ' 可达(' + ms + ' ms)';
-    else line = e.host + ':' + e.port + ' 不可达' + (errtext ? ' (' + errtext + ')' : '');
-    out.textContent = out.textContent ? out.textContent + '\\n' + line : line;
-  }
   $('#btn-save-tg').addEventListener('click', function () {
     var body = { BotToken: $('#o-tg-bot').value.trim(), ChatID: $('#o-tg-chat').value.trim() };
     if (!body.BotToken && !body.ChatID) { toast('至少填写 BotToken 或 ChatID', false); return; }
@@ -1933,12 +2009,31 @@ function 运维Tab(摘) {
     <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-cf">保存 CF</button><button type="button" class="btn ghost" id="btn-refresh-usage">立即刷新用量</button></div>
   </div>
   <div class="card">
+    <h2>优选 API</h2>
+    <div class="fld-grid">
+      <div class="field" style="grid-column:1/-1"><label class="ctl" for="o-pref-api">API 地址</label><input id="o-pref-api" type="text" placeholder="https://example.com/ip.txt 或 sub://订阅生成器地址" spellcheck="false" /><span class="hint">仅验证解析结果，不写入配置；通过后可把该行原样写进下方 ADD.txt，由订阅时解析</span></div>
+      <div class="field"><label class="ctl" for="o-pref-port">默认端口</label><input id="o-pref-port" type="text" inputmode="numeric" value="443" /><span class="hint">结果行内已带端口时以行内为准</span></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-verify-api">验证优选 API</button><span class="pill" id="o-api-result">未验证</span></div>
+    <div class="mono" id="o-api-out" style="display:none;margin:8px 0 0;white-space:pre-wrap"></div>
+  </div>
+  <div class="card">
+    <h2>本地 IP 库</h2>
+    <div class="fld-grid">
+      <div class="field"><label class="ctl">随机 IP</label><label class="switch"><input id="o-lib-random" type="checkbox" /><i></i><span>启用随机 IP</span></label><span class="hint">关闭时改用下方 ADD.txt 的自定义列表</span></div>
+      <div class="field"><label class="ctl" for="o-lib-count">随机数量</label><input id="o-lib-count" type="text" inputmode="numeric" value="16" /><span class="hint">1–100</span></div>
+      <div class="field"><label class="ctl" for="o-lib-port">指定端口</label><input id="o-lib-port" type="text" inputmode="numeric" value="-1" /><span class="hint">-1 表示在 CF 常用端口内随机</span></div>
+    </div>
+    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-save-lib">保存到配置</button><span class="dim" id="o-lib-note"></span></div>
+  </div>
+  <div class="card">
     <h2>自定义优选 IP（ADD.txt）</h2>
-    <div class="row" style="align-items:center"><span class="dim" id="o-add-stats"></span><button type="button" class="btn ghost" id="btn-o-test-add">逐个测试（前10条）</button></div>
-    <div class="mono dim" id="o-add-test-out" style="display:none;margin:6px 0"></div>
+    <div class="row" style="align-items:center"><span class="dim" id="o-add-stats"></span></div>
     <div id="o-add-sk" data-skeleton><div class="sk"></div><div class="sk"></div></div>
     <textarea id="o-add" data-skeleton rows="6" placeholder="每行一个 IP:端口，留空使用自动优选"></textarea>
-    <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button></div>
+    <div class="row"><button type="button" class="btn" id="btn-save-add">保存优选 IP</button><button type="button" class="btn ghost" id="btn-o-test-add">批量测速并排序</button><span class="dim" id="o-add-test-note"></span></div>
+    <p class="dim">测速为边缘建连延迟（TCP connect），不是带宽；最多测前 100 条，按延迟升序排列，不可达置后。</p>
+    <div class="mono dim" id="o-add-test-out" style="display:none;margin:6px 0"></div>
   </div>
   <div class="card">
     <h2>危险区</h2>
