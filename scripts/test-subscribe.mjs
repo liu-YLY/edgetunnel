@@ -1,4 +1,5 @@
 import { 识别订阅类型, 订阅转换器目标 } from '../src/subscribe/nodes.js';
+import { 生成Clash订阅 } from '../src/subscribe/format-native.js';
 import { 生成Shadowrocket订阅 } from '../src/subscribe/format-shadowrocket.js';
 import { 生成V2rayN订阅 } from '../src/subscribe/format-v2rayn.js';
 import { Loon订阅配置文件热补丁 } from '../src/subscribe/format-loon.js';
@@ -86,7 +87,38 @@ import nodeCrypto from 'node:crypto';
   assert.ok(quanx结果.includes('skip-cert-verify=true'), 'QuantumultX 热补丁补齐 skip-cert-verify');
   assert.ok(quanx结果.includes('[filter_remote]'), 'QuantumultX 远端规则段透传');
 
-  console.log('[test] 订阅分流：UA→类型 / 参数优先 / 默认 mixed / target 映射 / 直出链接 / Loon&QuanX 热补丁');
+  // ===== 5) 默认 Clash 本地直出（不经过第三方转换器与远端 SUBCONFIG）=====
+  const 直出节点 = [
+    'vless://00000000-0000-4000-8000-000000000000@1.2.3.4:443?security=tls&type=ws&host=example.com&sni=example.com&path=%2Fvideo&encryption=none#CF优选1',
+    'trojan://password@5.6.7.8:8443?security=tls&type=ws&host=example.com&sni=example.com&path=%2Fvideo#CF优选2',
+  ].join('\n');
+  const 直出配置 = { HOST: 'my.example', UUID: '11111111-1111-4111-8111-111111111111', 跳过证书验证: false, ECH: false, TLS分片: null };
+  const 直出文本 = 生成Clash订阅(直出节点, 直出配置);
+  // JSON 是 YAML 1.2 子集，Clash 直接吃；这里按 JSON 解析即可校验结构
+  const 直出 = JSON.parse(直出文本);
+  assert.strictEqual(直出.proxies.length, 2, '本地 Clash 直出保留 2 条节点');
+  assert.strictEqual(直出.proxies[0].uuid, 直出配置.UUID, '全零 UUID 应替换为真实 UUID');
+  assert.strictEqual(直出.proxies[0].servername, 'my.example', 'sni 占位符应替换为真实 host');
+  assert.strictEqual(直出.proxies[0]['ws-opts'].headers.Host, 'my.example', 'Host 占位符应替换为真实 host');
+  assert.strictEqual(直出.proxies[1].password, 'password', 'trojan 密码应透传');
+  assert.strictEqual(直出.proxies[1].port, 8443, '端口应透传');
+  assert.ok(!直出文本.includes('example.com') && !直出文本.includes('00000000-0000-4000-8000-000000000000'), '产物不得残留占位符');
+  // 代理组：节点选择 / 自动选择(url-test) / 故障转移(fallback) / 全球直连
+  const 组 = Object.fromEntries(直出['proxy-groups'].map(g => [g.name, g]));
+  for (const 名 of ['🚀 节点选择', '♻️ 自动选择', '🔯 故障转移', '🎯 全球直连']) assert.ok(组[名], '应存在代理组 ' + 名);
+  assert.strictEqual(组['♻️ 自动选择'].type, 'url-test', '自动选择应为 url-test');
+  assert.strictEqual(组['🔯 故障转移'].type, 'fallback', '故障转移应为 fallback');
+  assert.deepStrictEqual(组['🚀 节点选择'].proxies.slice(0, 2), ['♻️ 自动选择', '🔯 故障转移'], '节点选择应把自动选择/故障转移排在最前');
+  assert.strictEqual(组['🚀 节点选择'].proxies.length, 2 + 直出.proxies.length, '节点选择应包含全部节点');
+  // 分流规则：末条兜底走代理，且含国内直连
+  assert.strictEqual(直出.rules[直出.rules.length - 1], 'MATCH,🚀 节点选择', '末条规则应为 MATCH 到节点选择');
+  assert.ok(直出.rules.some(r => r.startsWith('GEOIP,CN,')), '应含 GEOIP 国内直连规则');
+  assert.ok(直出.rules.some(r => r.startsWith('DOMAIN-SUFFIX,cn,')), '应含 .cn 域名直连规则');
+  // 本地不支持的配置必须明确拒绝（由调用方回落转换器，而不是静默降级）
+  assert.throws(() => 生成Clash订阅(直出节点, { ...直出配置, ECH: true }), 'ECH 配置应明确拒绝');
+  assert.throws(() => 生成Clash订阅(直出节点, { ...直出配置, TLS分片: 'Happ' }), 'TLS 分片应明确拒绝');
+
+  console.log('[test] 订阅分流：UA→类型 / 参数优先 / 默认 mixed / target 映射 / 直出链接 / Loon&QuanX 热补丁 / Clash 本地直出');
   console.log('[test] 全部断言通过');
   process.exit(0);
 })().catch((e) => { console.error('[test] FAIL:', e); process.exit(1); });

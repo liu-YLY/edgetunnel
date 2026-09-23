@@ -74,13 +74,21 @@ push 到 `main`、且改动落在 `src/**`、`build.js`、`scripts/**`、`packag
 
 现有各客户端的转换链保留，避免改变 SUBCONFIG 自定义分流规则。
 
+**Clash 默认改为本地直出**（2026-09-23）：`/sub?token=…` 对 Clash 系 UA（clash / meta / mihomo）与 `target=clash` 不再调用第三方转换器，由 `src/subscribe/format-native.js` 本地生成完整配置。
+
+- 原因：转换器与远端 SUBCONFIG 都不受本仓库控制，实测同一转换器响应耗时 7s–60s+，超过 `/sub` 的 10s 超时即返回 403「订阅转换后端异常」，客户端表现为订阅更新失败、仍在用旧节点；远端配置拉取失败时还会产出"没有分流规则与代理组"的裸配置。
+- 输出内容：`mixed-port` + `🚀 节点选择`（select）/ `♻️ 自动选择`（url-test）/ `🔯 故障转移`（fallback）/ `🎯 全球直连`，规则为局域网与国内直连、其余走代理，末条 `MATCH`。
+- 规则集刻意精简，不等于 ACL4SSR 全量规则。需要旧行为时在链接后加 `&converter=1` 强制走转换器。
+- 本地不支持的配置（ECH、TLS 分片）不静默降级：本地生成会明确拒绝并自动回落转换器。
+- 流量信息仍由 `Subscription-Userinfo` 提供，仅当运维页配好 CF 凭据且用量查询成功时才会带上。
+
 新增 `/sub?token=…&target=clash&native=1` 和 `target=singbox&native=1`：
 
 - VLESS/Trojan + WS/gRPC，最多 100 个节点；不调用订阅转换器。
 - 输出最小本地 mixed 端口和 PROXY 选择组，全部流量走该组；不包含旧 SUBCONFIG 的规则。
 - ECH、TLS 分片、SS、XHTTP 等暂不支持，会明确返回 400，不静默降级。
 - 本地节点地址来源仍可能调用优选列表接口。要完全离线生成，请在配置中关闭随机 IP 并保存 ADD.txt。
-- 其余格式仍使用原转换器。全格式、全高级选项迁移需逐格式客户端验收；本次没有宣称已全部内化。
+- 其余格式（singbox/surge/loon/quanx）仍使用原转换器。全格式、全高级选项迁移需逐格式客户端验收；本次没有宣称已全部内化。
 
 ## 线上验收与回退
 

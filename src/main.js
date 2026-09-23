@@ -22,7 +22,7 @@ import { 允许登录, 同源写请求, 签发会话, 读取管理JSON, 限长�
 import { getCloudflareUsage } from './services/usage.js';
 import { Clash订阅配置文件热补丁 } from './subscribe/format-clash.js';
 import { Loon订阅配置文件热补丁 } from './subscribe/format-loon.js';
-import { 生成原生订阅 } from './subscribe/format-native.js';
+import { 生成Clash订阅, 生成原生订阅 } from './subscribe/format-native.js';
 import { QuantumultX订阅配置文件热补丁 } from './subscribe/format-quanx.js';
 import { 生成Shadowrocket订阅 } from './subscribe/format-shadowrocket.js';
 import { Singbox订阅配置文件热补丁 } from './subscribe/format-singbox.js';
@@ -429,6 +429,18 @@ async function 处理请求(request, env, ctx, 配置) {
                             const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, '', '');
                             return new Response(生成原生订阅(订阅类型, links, config_JSON), { headers:{ ...responseHeaders, 'content-type':'application/json; charset=utf-8' } });
                         }
+						// 默认 Clash 直出：第三方转换器与远端 SUBCONFIG 都不受本仓库控制，且转换器耗时实测
+						// 7s–60s+，超过下面的 10s 超时就会被判成"后端异常"，表现为节点在但连不上。
+						// 需要 ACL4SSR 全量规则时加 &converter=1；本地不支持的配置（ECH/TLS 分片）同样回落转换器。
+						if (订阅类型 === 'clash' && !url.searchParams.has('converter')) {
+							try {
+								const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+								const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, '', '');
+								return new Response(生成Clash订阅(links, config_JSON), { headers: { ...responseHeaders, 'content-type': 'application/x-yaml; charset=utf-8' } });
+							} catch (error) {
+								log(`[订阅] Clash 本地直出不可用，回落转换器: ${error && error.message ? error.message : error}`);
+							}
+						}
 						let 订阅内容 = '';
 						if (订阅类型 === 'mixed') {
 							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';

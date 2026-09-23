@@ -28,7 +28,7 @@ push `main` 即由 `.github/workflows/deploy.yml` 自动校验并部署到生产
 - 管理会话服务端校验 24 小时有效期；登录限流、同源写入检查、配置校验和上一版本恢复。
 - `/login`、`/admin` 为本地页面；`/admin` 固定使用本仓库自带的管理面板，上游远程面板的代理路径已移除。
 - 日志使用脱敏 Workers Logs，不再更新单个 KV 大 JSON；用量统计在后台刷新。
-- 原客户端订阅保持；`native=1` 可选择 Clash/Mihomo 或 sing-box 最小原生配置，支持范围见部署指南。
+- 原客户端订阅保持；Clash 订阅默认由本地直出（代理组 + 精简分流规则，不依赖第三方转换器），`&converter=1` 可回落转换器；`native=1` 可选择 Clash/Mihomo 或 sing-box 最小原生配置，支持范围见部署指南。
 
 ## 维护
 

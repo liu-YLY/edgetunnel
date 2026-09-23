@@ -17,7 +17,7 @@ function 节点Tab() {
   <div class="card">
     <h2>订阅链接</h2>
     <div class="mono" id="sub-link"></div>
-    <p class="dim">订阅更新周期：每 3 小时提示一次；原生订阅为最小配置（Clash/sing-box），不含自定义分流规则。</p>
+    <p class="dim">订阅更新周期：每 3 小时提示一次。Clash 订阅由本服务本地直出（代理组 + 自动选择/故障转移 + 精简分流规则），不经过第三方转换器；需要 ACL4SSR 全量规则时在链接后加 <b>&amp;converter=1</b>。sing-box 原生订阅仍是最小配置。</p>
   </div>
   <div class="card">
     <h2>客户端格式</h2>

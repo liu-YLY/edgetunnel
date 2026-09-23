@@ -21,6 +21,15 @@ const uuid = '11111111-1111-4111-8111-111111111111';
   const invalid=await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{"反代":null}'});assert.equal(invalid.status,400);
   const valid=await call('/admin/config',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{"PATH":"/runtime"}'});assert.equal(valid.status,200);
   const saved=await (await mf.getKVNamespace('KV')).get('cfg:runtime.example','json');assert.equal(saved.PATH,'/runtime');assert.ok(saved.配置版本);
+  // Clash 订阅必须本地直出：沙箱无外部出口，若仍走第三方转换器这里只会是 403"订阅转换后端异常"。
+  const subToken=(await (await call('/admin/config.json',{headers:{Cookie:cookie}})).json()).优选订阅生成.TOKEN;
+  const clashSub=await call('/sub?token='+subToken,{headers:{'User-Agent':'clash-verge/1.7.7'}});
+  assert.equal(clashSub.status,200,'Clash 订阅应本地直出并返回 200');
+  assert.match(clashSub.headers.get('content-type')||'',/yaml/,'Clash 订阅应为 YAML');
+  const clashYaml=await clashSub.text();
+  for (const 标记 of ['"proxy-groups"','♻️ 自动选择','🔯 故障转移','MATCH,🚀 节点选择','GEOIP,CN,']) assert.ok(clashYaml.includes(标记),`Clash 订阅应含 ${标记}`);
+  assert.ok(!clashYaml.includes('example.com')&&!clashYaml.includes('00000000-0000-4000-8000-000000000000'),'Clash 订阅不得残留占位符');
+  assert.ok(!clashYaml.includes('订阅转换后端异常'),'Clash 订阅不应依赖第三方转换器');
   // VLESS -> Workers cloudflare:sockets -> 本地 TCP echo；真实 WS 分帧与双向数据。
   const response=await call('/',{headers:{Upgrade:'websocket'}}); assert.equal(response.status,101);
   const ws=response.webSocket;ws.accept();

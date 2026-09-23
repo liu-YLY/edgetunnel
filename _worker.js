@@ -1933,7 +1933,7 @@ function 节点Tab() {
   <div class="card">
     <h2>订阅链接</h2>
     <div class="mono" id="sub-link"></div>
-    <p class="dim">订阅更新周期：每 3 小时提示一次；原生订阅为最小配置（Clash/sing-box），不含自定义分流规则。</p>
+    <p class="dim">订阅更新周期：每 3 小时提示一次。Clash 订阅由本服务本地直出（代理组 + 自动选择/故障转移 + 精简分流规则），不经过第三方转换器；需要 ACL4SSR 全量规则时在链接后加 <b>&amp;converter=1</b>。sing-box 原生订阅仍是最小配置。</p>
   </div>
   <div class="card">
     <h2>客户端格式</h2>
@@ -7802,24 +7802,56 @@ function 修正Loon节点行(原行, config_JSON) {
 // src/subscribe/format-native.js
 function 生成原生订阅(target, links, config) {
   if (!["clash", "singbox"].includes(target)) throw 输入错误("原生订阅当前支持 clash、singbox");
-  if (config.ECH || config.TLS分片) throw 输入错误("原生订阅暂不支持 ECH/TLS 分片，请使用现有转换链");
+  const nodes = 映射本地节点(links, config);
+  if (target === "clash") {
+    return JSON.stringify({ "mixed-port": 7890, "allow-lan": false, mode: "rule", proxies: 映射Clash代理(nodes, config), "proxy-groups": [{ name: "PROXY", type: "select", proxies: nodes.map((n) => n.name) }], rules: ["MATCH,PROXY"] }, null, 2);
+  }
+  const outbounds = nodes.map((n) => ({ type: n.type, tag: n.name, server: n.server, server_port: n.port, [n.type === "vless" ? "uuid" : "password"]: n.password, tls: { enabled: true, server_name: n.host, insecure: Boolean(config.跳过证书验证) }, transport: n.network === "ws" ? { type: "ws", path: n.path, headers: { Host: n.authority } } : { type: "grpc", service_name: n.service }, ...n.type === "vless" ? { packet_encoding: "" } : {} }));
+  return JSON.stringify({ inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }], outbounds: [{ type: "selector", tag: "PROXY", outbounds: nodes.map((n) => n.name) }, ...outbounds], route: { final: "PROXY" } }, null, 2);
+}
+var 节点测试URL = "http://cp.cloudflare.com/generate_204";
+function 映射本地节点(links, config) {
+  if (config.ECH || config.TLS分片) throw 输入错误("本地订阅暂不支持 ECH/TLS 分片，请使用现有转换链");
   const lines = links.split("\n").filter(Boolean);
-  if (!lines.length || lines.length > 100) throw 输入错误("原生订阅节点数必须为 1–100");
-  const nodes = lines.map((line, i) => {
+  if (!lines.length || lines.length > 100) throw 输入错误("本地订阅节点数必须为 1–100");
+  return lines.map((line, i) => {
     const u = new URL(line), type = u.protocol.slice(0, -1), q = u.searchParams;
-    if (!["vless", "trojan"].includes(type) || !["ws", "grpc"].includes(q.get("type"))) throw 输入错误("原生订阅支持 VLESS/Trojan 的 WS/gRPC 传输");
-    if (q.has("flow") || q.get("security") !== "tls" || q.get("encryption") && q.get("encryption") !== "none") throw 输入错误("原生订阅不支持该节点的加密选项");
+    if (!["vless", "trojan"].includes(type) || !["ws", "grpc"].includes(q.get("type"))) throw 输入错误("本地订阅支持 VLESS/Trojan 的 WS/gRPC 传输");
+    if (q.has("flow") || q.get("security") !== "tls" || q.get("encryption") && q.get("encryption") !== "none") throw 输入错误("本地订阅不支持该节点的加密选项");
     const host = q.get("sni") === "example.com" ? config.HOST : q.get("sni");
     const authority = q.get("host") === "example.com" || q.get("authority") === "example.com" ? config.HOST : q.get("host") || q.get("authority") || host;
     const password = u.username === "00000000-0000-4000-8000-000000000000" ? config.UUID : decodeURIComponent(u.username);
     return { type, server: u.hostname.replace(/^\[|\]$/g, ""), port: Number(u.port) || 443, name: (decodeURIComponent(u.hash.slice(1)) || "node") + "-" + (i + 1), host, authority, password, network: q.get("type"), path: q.get("path") || "/", service: q.get("serviceName") || "" };
   });
-  if (target === "clash") {
-    const proxies = nodes.map((n) => ({ name: n.name, type: n.type, server: n.server, port: n.port, [n.type === "vless" ? "uuid" : "password"]: n.password, tls: true, servername: n.host, "skip-cert-verify": Boolean(config.跳过证书验证), network: n.network, ...n.network === "ws" ? { "ws-opts": { path: n.path, headers: { Host: n.authority } } } : { "grpc-opts": { "grpc-service-name": n.service } } }));
-    return JSON.stringify({ "mixed-port": 7890, "allow-lan": false, mode: "rule", proxies, "proxy-groups": [{ name: "PROXY", type: "select", proxies: nodes.map((n) => n.name) }], rules: ["MATCH,PROXY"] }, null, 2);
-  }
-  const outbounds = nodes.map((n) => ({ type: n.type, tag: n.name, server: n.server, server_port: n.port, [n.type === "vless" ? "uuid" : "password"]: n.password, tls: { enabled: true, server_name: n.host, insecure: Boolean(config.跳过证书验证) }, transport: n.network === "ws" ? { type: "ws", path: n.path, headers: { Host: n.authority } } : { type: "grpc", service_name: n.service }, ...n.type === "vless" ? { packet_encoding: "" } : {} }));
-  return JSON.stringify({ inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }], outbounds: [{ type: "selector", tag: "PROXY", outbounds: nodes.map((n) => n.name) }, ...outbounds], route: { final: "PROXY" } }, null, 2);
+}
+function 映射Clash代理(nodes, config) {
+  return nodes.map((n) => ({ name: n.name, type: n.type, server: n.server, port: n.port, [n.type === "vless" ? "uuid" : "password"]: n.password, tls: true, servername: n.host, "skip-cert-verify": Boolean(config.跳过证书验证), network: n.network, ...n.network === "ws" ? { "ws-opts": { path: n.path, headers: { Host: n.authority } } } : { "grpc-opts": { "grpc-service-name": n.service } } }));
+}
+function 生成Clash订阅(links, config) {
+  const nodes = 映射本地节点(links, config), 节点名 = nodes.map((n) => n.name);
+  return JSON.stringify({
+    "mixed-port": 7890,
+    "allow-lan": false,
+    mode: "rule",
+    "log-level": "info",
+    proxies: 映射Clash代理(nodes, config),
+    "proxy-groups": [
+      { name: "🚀 节点选择", type: "select", proxies: ["♻️ 自动选择", "🔯 故障转移", ...节点名] },
+      { name: "♻️ 自动选择", type: "url-test", url: 节点测试URL, interval: 300, tolerance: 50, proxies: 节点名 },
+      { name: "🔯 故障转移", type: "fallback", url: 节点测试URL, interval: 300, proxies: 节点名 },
+      { name: "🎯 全球直连", type: "select", proxies: ["DIRECT", "🚀 节点选择"] }
+    ],
+    rules: [
+      "IP-CIDR,127.0.0.0/8,🎯 全球直连,no-resolve",
+      "IP-CIDR,10.0.0.0/8,🎯 全球直连,no-resolve",
+      "IP-CIDR,172.16.0.0/12,🎯 全球直连,no-resolve",
+      "IP-CIDR,192.168.0.0/16,🎯 全球直连,no-resolve",
+      "IP-CIDR,100.64.0.0/10,🎯 全球直连,no-resolve",
+      "DOMAIN-SUFFIX,cn,🎯 全球直连",
+      "GEOIP,CN,🎯 全球直连",
+      "MATCH,🚀 节点选择"
+    ]
+  }, null, 2);
 }
 
 // src/subscribe/format-quanx.js
@@ -8620,6 +8652,15 @@ async function 处理请求(request, env, ctx, 配置) {
             const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
             const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, "", "");
             return new Response(生成原生订阅(订阅类型, links, config_JSON), { headers: { ...responseHeaders, "content-type": "application/json; charset=utf-8" } });
+          }
+          if (订阅类型 === "clash" && !url.searchParams.has("converter")) {
+            try {
+              const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+              const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, "", "");
+              return new Response(生成Clash订阅(links, config_JSON), { headers: { ...responseHeaders, "content-type": "application/x-yaml; charset=utf-8" } });
+            } catch (error) {
+              log(`[订阅] Clash 本地直出不可用，回落转换器: ${error && error.message ? error.message : error}`);
+            }
           }
           let 订阅内容 = "";
           if (订阅类型 === "mixed") {
