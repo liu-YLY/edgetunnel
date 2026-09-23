@@ -7,7 +7,7 @@ import { 全局读取配置, 读取config_JSON } from './config/index.js';
 import { 保存配置 } from './config/store.js';
 import { 读取用量历史, 写入用量快照 } from './services/usage-history.js';
 import { 执行自检 } from './services/self-check.js';
-import { Pages静态页面, Version, 特征码字典 } from './core/constants.js';
+import { Version, 特征码字典 } from './core/constants.js';
 import { log, 请求存储 } from './core/context.js';
 import { base64SecretEncode, 是拦截UA } from './core/options.js';
 import { 替换星号为随机字符, 获取叉HTTPPadding标识 } from './core/paths.js';
@@ -382,7 +382,6 @@ async function 处理请求(request, env, ctx, 配置) {
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
-					if (env.REMOTE_ADMIN === 'true') return fetch(Pages静态页面 + '/admin' + url.search, { signal:AbortSignal.timeout(8000) });
                     return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { headers:{ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Frame-Options':'DENY', 'Referrer-Policy':'no-referrer' } });
 				} else if (访问路径 === 'logout' || uuidRegex.test(访问路径)) {//清除cookie并跳转到登录页面
 					const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });

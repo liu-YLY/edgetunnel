@@ -61,11 +61,8 @@ push 到 `main`、且改动落在 `src/**`、`build.js`、`scripts/**`、`packag
 - 出站使用 `cloudflare:sockets`；auto 仅连接原始目标，不再尝试内置 CF IP。平台不支持的目标将失败；需要受控的可达代理出口时显式配置 PROXYIP/SOCKS/HTTP/HTTPS。region 仍是显式启用的旧外部依赖。
 - 所有 HTTPS 代理统一使用原生 TLS；不再绕过证书校验。IP 代理证书不匹配时应改用证书匹配的域名，不能通过关闭验证恢复。
 - 管理会话改为 HMAC-SHA256 签名、24 小时服务端过期，并绑定 host/UA。旧 Cookie 失效，需重新登录；订阅 UUID/token 派生规则未改。
-- `/admin` 默认本地管理面板（概览 / 节点与订阅 / 自检 / 配置 / 运维五个 Tab），登录页入口指向该页面。`REMOTE_ADMIN=true` 才改用上游远程面板（`edt-pages.github.io/admin`），该面板不是本仓库可控资源：
-  - 默认关闭是刻意取舍：管理闭环（配置、节点、订阅、诊断）由本地面板完整覆盖，数据面不依赖任何管理页面；开启远程面板只换来界面熟悉度，不增加能力。
-  - 强行开启会半残：`/admin/log.json` 恒返回空数组（日志改 Workers Logs）、`/admin/init` 与 `/admin/getCloudflareUsage` 仅接受 POST、配置主入口已是 `cfg:{host}`（与 `config.json` 两个入口不构成跨键事务），上游面板不同步适配即出现日志空白或保存失败。
-  - 安全代价：反代外部页面会把第三方脚本放进同源上下文，可直接操作管理会话 Cookie，并绕过本地面板与登录页的 CSP、`X-Frame-Options`、`Referrer-Policy` 约束；上游域名变更或下线会直接导致 `/admin` 不可用。
-  - 因此登录页不提供指向该外部面板的入口。新接口变化若确需远程面板跟进，必须由上游同步适配后再评估。
+- `/admin` 固定使用本仓库自带的管理面板（概览 / 节点与订阅 / 自检 / 配置 / 运维五个 Tab），登录页入口指向该页面。上游远程面板（`edt-pages.github.io/admin`）的代理路径与 `REMOTE_ADMIN` 开关已移除，理由：该面板不是本仓库可控资源，反代它会把第三方脚本放进同源上下文（可直接操作管理会话 Cookie，并绕过本地面板与登录页的 CSP、`X-Frame-Options`、`Referrer-Policy` 约束）；且本分叉接口已变更（`/admin/log.json` 恒返回空数组、`/admin/init` 与 `/admin/getCloudflareUsage` 仅接受 POST、配置主入口为 `cfg:{host}`），上游面板不同步适配即出现日志空白或保存失败。
+- `REMOTE_ADMIN` 已不再是受支持的环境变量，设置它不会有任何效果。确需临时恢复上游面板时，回滚到移除前的部署版本，不要只改前端或重新加变量。
 - `/admin/init` 改为 POST；`/admin/getCloudflareUsage` 改为 POST JSON，禁止 API 凭据出现在 URL。
 - `/admin/config` 保存时校验、生成版本/时间、保留一个 `cfg:{host}:previous`；POST `/admin/config/restore` 可恢复。旧 config.json 也保留 previous，两个入口不构成跨键事务。
 - 不再写 KV `log.json`，旧日志接口返回空数组；查看 Workers Logs 的结构化 access 事件。OFF_LOG 仍关闭 access 日志。TG 开启时也只发送去掉查询参数后的访问路径。

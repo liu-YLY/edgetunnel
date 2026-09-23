@@ -2322,7 +2322,6 @@ function 验证配置(value, reference = null, path = "", depth = 0) {
 // src/core/constants.js
 var Version = "2026-08-11 14:45:22";
 var 默认SOCKS5白名单 = ["*tapecontent.net", "*cloudatacdn.com", "*loadshare.org", "*cdn-centaurus.com", "scholar.google.com"];
-var Pages静态页面 = "https://edt-pages.github.io";
 var WS早期数据最大字节 = 8 * 1024;
 var WS早期数据最大头长度 = Math.ceil(WS早期数据最大字节 * 4 / 3) + 4;
 var 上行合包目标字节 = 20 * 1024;
@@ -8580,7 +8579,6 @@ async function 处理请求(request, env, ctx, 配置) {
           }
         }
         ctx.waitUntil(请求日志记录(env, request, 访问IP, "Admin_Login", config_JSON));
-        if (env.REMOTE_ADMIN === "true") return fetch(Pages静态页面 + "/admin" + url.search, { signal: AbortSignal.timeout(8e3) });
         return new Response(管理面板HTML(env, config_JSON, 面板运行态()), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } });
       } else if (访问路径 === "logout" || uuidRegex.test(访问路径)) {
         const 响应 = new Response("重定向中...", { status: 302, headers: { "Location": "/login" } });
