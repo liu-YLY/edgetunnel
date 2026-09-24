@@ -362,212 +362,10 @@ ${config_JSON.CF.Usage.success ? `📊 <b>请求用量：</b>${config_JSON.CF.Us
 }
 
 // src/admin/qr.js
-var 二维码运行时 = `window.QRCode = (function () {
-  'use strict';
-  var EXP = new Array(512), LOG = new Array(256);
-  (function () {
-    var x = 1;
-    for (var i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11D; }
-    for (var j = 255; j < 512; j++) { EXP[j] = EXP[j - 255]; }
-  })();
-  function gmul(a, b) { return (a && b) ? EXP[LOG[a] + LOG[b]] : 0; }
-  function rsGen(ecc) {
-    var p = [1];
-    for (var i = 0; i < ecc; i++) {
-      var n = new Array(p.length + 1);
-      for (var k = 0; k < n.length; k++) n[k] = 0;
-      for (var j = 0; j < p.length; j++) { n[j] ^= gmul(p[j], EXP[i]); n[j + 1] ^= p[j]; }
-      p = n;
-    }
-    return p;
-  }
-  function rsRem(data, ecc) {
-    var g = rsGen(ecc), buf = new Array(ecc);
-    for (var i = 0; i < ecc; i++) buf[i] = 0;
-    for (var i = 0; i < data.length; i++) {
-      var f = data[i] ^ buf[0];
-      for (var j = 0; j < ecc - 1; j++) buf[j] = buf[j + 1];
-      buf[ecc - 1] = 0;
-      for (var j = 0; j < ecc; j++) buf[j] ^= gmul(g[j + 1], f);
-    }
-    return buf;
-  }
-  var V = { 1: { blk: 1, ecc: 10, data: 16 }, 2: { blk: 1, ecc: 16, data: 28 }, 3: { blk: 1, ecc: 26, data: 44 },
-            4: { blk: 2, ecc: 18, data: 32 }, 5: { blk: 2, ecc: 24, data: 43 }, 6: { blk: 4, ecc: 16, data: 27 } };
-  var CAP = { 1: 14, 2: 26, 3: 42, 4: 62, 5: 84, 6: 106 };
-  var ALIGN = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34] };
-  function baseMatrix(size, align) {
-    var m = [];
-    for (var y = 0; y < size; y++) { var r = new Array(size); for (var x = 0; x < size; x++) r[x] = 0; m.push(r); }
-    function finder(ox, oy) {
-      for (var j = -1; j <= 7; j++) {
-        for (var i = -1; i <= 7; i++) {
-          var x = ox + i, y = oy + j;
-          if (x < 0 || y < 0 || x >= size || y >= size) continue;
-          var in7 = j >= 0 && j <= 6 && i >= 0 && i <= 6;
-          var dark = in7 && (j === 0 || j === 6 || i === 0 || i === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4));
-          m[y][x] = dark ? 1 : 0;
-        }
-      }
-    }
-    finder(0, 0); finder(size - 7, 0); finder(0, size - 7);
-    for (var t = 8; t < size - 8; t++) { m[6][t] = (t % 2 === 0) ? 1 : 0; m[t][6] = (t % 2 === 0) ? 1 : 0; }
-    for (var a = 0; a < align.length; a++) {
-      for (var b = 0; b < align.length; b++) {
-        var cx = align[a], cy = align[b];
-        if (m[cy][cx] !== 0) continue;
-        for (var j = -2; j <= 2; j++) {
-          for (var i = -2; i <= 2; i++) {
-            m[cy + j][cx + i] = (i === 0 && j === 0) ? 1 : ((i === -2 || i === 2 || j === -2 || j === 2) ? 1 : 0);
-          }
-        }
-      }
-    }
-    // 格式信息位 + 暗色模块占位（值随意，仅用于占位使数据写入跳过这些单元）
-    m[size - 8][8] = 1; // 暗色模块：列 8、行 size-8
-    return m;
-  }
-  function encodeFormat(mask) {
-    var data = mask; // EC=M（00）→ 高 3 位数据为 0
-    var rem = data << 10;
-    for (var i = 14; i >= 10; i--) { if ((rem >> i) & 1) rem ^= 0x537 << (i - 10); }
-    return ((data << 10) | rem) ^ 0x5412;
-  }
-  var FORMAT_POS = null; // 惰性构建：每 bit 两个位置（竖排 x=8 + 横排 y=8），共 2×15
-  function formatPositions(size) {
-    if (FORMAT_POS && FORMAT_POS.size === size) return FORMAT_POS.list;
-    var list = [];
-    for (var i = 0; i < 15; i++) {
-      var vx = 8, vy = i < 6 ? i : (i < 8 ? i + 1 : size - 15 + i);                       // 竖排（左/左下副本，x=8）
-      var hx = i < 8 ? size - 1 - i : (i === 8 ? 7 : 15 - i - 1 + 8), hy = 8;             // 横排（上/右上副本，y=8）
-      list.push({ x: vx, y: vy }, { x: hx, y: hy });
-    }
-    FORMAT_POS = { size: size, list: list };
-    return list;
-  }
-  function maskBit(x, y, mask) {
-    switch (mask) {
-      case 0: return ((x + y) % 2) === 0;
-      case 1: return (y % 2) === 0;
-      case 2: return (x % 3) === 0;
-      case 3: return ((x + y) % 3) === 0;
-      case 4: return ((Math.floor(y / 2) + Math.floor(x / 3)) % 2) === 0;
-      case 5: return (((x * y) % 2) + ((x * y) % 3)) === 0;
-      case 6: return ((((x * y) % 2) + ((x * y) % 3)) % 2) === 0;
-      default: return ((((x + y) % 2) + ((x * y) % 3)) % 2) === 0;
-    }
-  }
-  function penalty(m) {
-    var size = m.length, score = 0;
-    for (var y = 0; y < size; y++) {
-      var run = 1;
-      for (var x = 1; x < size; x++) {
-        if (m[y][x] === m[y][x - 1]) { run++; } else { if (run >= 5) score += 3 + (run - 5); run = 1; }
-      }
-      if (run >= 5) score += 3 + (run - 5);
-    }
-    for (var x = 0; x < size; x++) {
-      var runC = 1;
-      for (var y = 1; y < size; y++) {
-        if (m[y][x] === m[y - 1][x]) { runC++; } else { if (runC >= 5) score += 3 + (runC - 5); runC = 1; }
-      }
-      if (runC >= 5) score += 3 + (runC - 5);
-    }
-    for (var j = 0; j < size - 1; j++) {
-      for (var i = 0; i < size - 1; i++) {
-        var v = m[j][i];
-        if (m[j][i + 1] === v && m[j + 1][i] === v && m[j + 1][i + 1] === v) score += 3;
-      }
-    }
-    var dark = 0;
-    for (var j = 0; j < size; j++) { for (var i = 0; i < size; i++) { dark += m[j][i]; } }
-    var percent = (dark * 100) / (size * size);
-    score += Math.floor(Math.abs(percent - 50) / 5) * 10;
-    return score;
-  }
-  function clone(m) { var out = []; for (var i = 0; i < m.length; i++) { out.push(m[i].slice()); } return out; }
-  function generate(text) {
-    if (typeof text !== 'string') text = String(text);
-    var bytes = [];
-    for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); bytes.push(c <= 0xff ? c : 63); }
-    var version = 1;
-    while (version <= 6 && bytes.length > CAP[version]) version++;
-    if (version > 6) throw new Error('内容过长，二维码仅支持不超过 106 个 ASCII 字符');
-    var cfg = V[version], size = 17 + version * 4;
-    var totalData = cfg.blk * cfg.data;
-    var bits = [];
-    function push(v, n) { for (var k = n - 1; k >= 0; k--) bits.push((v >> k) & 1); }
-    push(4, 4); push(bytes.length, 8);
-    for (var i = 0; i < bytes.length; i++) push(bytes[i], 8);
-    var rem8 = 8 - (bits.length % 8); if (rem8 === 8) rem8 = 0;
-    var term = Math.min(4, rem8); push(0, term === 0 ? 0 : term);
-    while (bits.length % 8 !== 0) push(0, 8 - (bits.length % 8));
-    var dataWords = [];
-    for (var i = 0; i < bits.length; i += 8) {
-      var b = 0; for (var k = 0; k < 8; k++) b = (b << 1) | (bits[i + k] || 0);
-      dataWords.push(b);
-    }
-    while (dataWords.length < totalData) dataWords.push((dataWords.length % 2) === 0 ? 0xEC : 0x11);
-    var per = cfg.data;
-    var blocks = [];
-    for (var b = 0; b < cfg.blk; b++) blocks.push(dataWords.slice(b * per, (b + 1) * per));
-    var eccs = [];
-    for (var b = 0; b < cfg.blk; b++) eccs.push(rsRem(blocks[b], cfg.ecc));
-    var final = [];
-    for (var i = 0; i < per; i++) { for (var b = 0; b < cfg.blk; b++) final.push(blocks[b][i]); }
-    for (var i = 0; i < cfg.ecc; i++) { for (var b = 0; b < cfg.blk; b++) final.push(eccs[b][i]); }
-    // 数据单元收集（跳过功能图案、格式位、暗色模块占位）
-    var base = baseMatrix(size, ALIGN[version]);
-    var fmt = [8, size - 8].join(',');
-    var skip = formatPositions(size);
-    function isFunc(x, y) { return base[y][x] !== 0 || (x === 8 && y === size - 8) || skip.some(function (p) { return p.x === x && p.y === y; }); }
-    var cells = [];
-    var dir = -1, col = size - 1;
-    function walk() {
-      if (col === 6) col--;
-      for (var row = dir < 0 ? size - 1 : 0; row >= 0 && row < size; row += dir) {
-        for (var k = 0; k < 2; k++) {
-          var x = col - k;
-          if (x < 0) continue;
-          if (!isFunc(x, row)) cells.push({ x: x, y: row });
-        }
-      }
-      if (col - 2 < 0) return;
-      dir = -dir; col -= 2; walk();
-    }
-    walk();
-    var best = null;
-    for (var mask = 0; mask < 8; mask++) {
-      var trial = clone(base);
-      trial[size - 8][8] = 1;
-      for (var i = 0; i < cells.length && i < final.length; i++) {
-        var c = cells[i];
-        var v = final[i] ^ (maskBit(c.x, c.y, mask) ? 1 : 0);
-        trial[c.y][c.x] = v;
-      }
-      var s = penalty(trial);
-      if (!best || s < best.score) best = { mask: mask, m: trial, score: s };
-    }
-    var fmtBits = encodeFormat(best.mask);
-    (function putFormat() {
-      var list = formatPositions(size);
-      for (var i = 0; i < 15; i++) {
-        var bit = ((fmtBits >> i) & 1) === 1 ? 1 : 0;
-        best.m[list[i * 2].y][list[i * 2].x] = bit;       // 竖排（左/左下副本）
-        best.m[list[i * 2 + 1].y][list[i * 2 + 1].x] = bit; // 横排（上/右上副本）
-      }
-      best.m[size - 8][8] = 1; // 暗色模块（列 8、行 size-8）
-    })();
-    return best.m;
-  }
-  function generateSVG(text, scale) {
-    var m = generate(text), size = m.length, s = scale || 3;
-    var rects = [];
-    for (var y = 0; y < size; y++) { for (var x = 0; x < size; x++) { if (m[y][x]) rects.push('<rect x="' + (x * s) + '" y="' + (y * s) + '" width="' + s + '" height="' + s + '" fill="#111" />'); } }
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (size * s) + ' ' + (size * s) + '" width="' + (size * s) + '" height="' + (size * s) + '" shape-rendering="crispEdges" role="img" aria-label="节点二维码">' + rects.join('') + '</svg>';
-  }
-  return { generate: generate, generateSVG: generateSVG };
-})();`;
+var 二维码运行时 = `(()=>{var j=function(g,l){let r=g,a=K[l],e=null,t=0,i=null,w=[],y={},h=function(o,f){t=r*4+17,e=(function(n){let u=new Array(n);for(let c=0;c<n;c+=1){u[c]=new Array(n);for(let m=0;m<n;m+=1)u[c][m]=null}return u})(t),d(0,0),d(t-7,0),d(0,t-7),_(),S(),P(o,f),r>=7&&E(o),i==null&&(i=L(r,a,w)),v(i,f)},d=function(o,f){for(let n=-1;n<=7;n+=1)if(!(o+n<=-1||t<=o+n))for(let u=-1;u<=7;u+=1)f+u<=-1||t<=f+u||(0<=n&&n<=6&&(u==0||u==6)||0<=u&&u<=6&&(n==0||n==6)||2<=n&&n<=4&&2<=u&&u<=4?e[o+n][f+u]=!0:e[o+n][f+u]=!1)},A=function(){let o=0,f=0;for(let n=0;n<8;n+=1){h(!0,n);let u=O.getLostPoint(y);(n==0||o>u)&&(o=u,f=n)}return f},S=function(){for(let o=8;o<t-8;o+=1)e[o][6]==null&&(e[o][6]=o%2==0);for(let o=8;o<t-8;o+=1)e[6][o]==null&&(e[6][o]=o%2==0)},_=function(){let o=O.getPatternPosition(r);for(let f=0;f<o.length;f+=1)for(let n=0;n<o.length;n+=1){let u=o[f],c=o[n];if(e[u][c]==null)for(let m=-2;m<=2;m+=1)for(let x=-2;x<=2;x+=1)m==-2||m==2||x==-2||x==2||m==0&&x==0?e[u+m][c+x]=!0:e[u+m][c+x]=!1}},E=function(o){let f=O.getBCHTypeNumber(r);for(let n=0;n<18;n+=1){let u=!o&&(f>>n&1)==1;e[Math.floor(n/3)][n%3+t-8-3]=u}for(let n=0;n<18;n+=1){let u=!o&&(f>>n&1)==1;e[n%3+t-8-3][Math.floor(n/3)]=u}},P=function(o,f){let n=a<<3|f,u=O.getBCHTypeInfo(n);for(let c=0;c<15;c+=1){let m=!o&&(u>>c&1)==1;c<6?e[c][8]=m:c<8?e[c+1][8]=m:e[t-15+c][8]=m}for(let c=0;c<15;c+=1){let m=!o&&(u>>c&1)==1;c<8?e[8][t-c-1]=m:c<9?e[8][15-c-1+1]=m:e[8][15-c-1]=m}e[t-8][8]=!o},v=function(o,f){let n=-1,u=t-1,c=7,m=0,x=O.getMaskFunction(f);for(let C=t-1;C>0;C-=2)for(C==6&&(C-=1);;){for(let k=0;k<2;k+=1)if(e[u][C-k]==null){let B=!1;m<o.length&&(B=(o[m]>>>c&1)==1),x(u,C-k)&&(B=!B),e[u][C-k]=B,c-=1,c==-1&&(m+=1,c=7)}if(u+=n,u<0||t<=u){u-=n,n=-n;break}}},T=function(o,f){let n=0,u=0,c=0,m=new Array(f.length),x=new Array(f.length);for(let b=0;b<f.length;b+=1){let M=f[b].dataCount,N=f[b].totalCount-M;u=Math.max(u,M),c=Math.max(c,N),m[b]=new Array(M);for(let R=0;R<m[b].length;R+=1)m[b][R]=255&o.getBuffer()[R+n];n+=M;let Q=O.getErrorCorrectPolynomial(N),W=F(m[b],Q.getLength()-1).mod(Q);x[b]=new Array(Q.getLength()-1);for(let R=0;R<x[b].length;R+=1){let J=R+W.getLength()-x[b].length;x[b][R]=J>=0?W.getAt(J):0}}let C=0;for(let b=0;b<f.length;b+=1)C+=f[b].totalCount;let k=new Array(C),B=0;for(let b=0;b<u;b+=1)for(let M=0;M<f.length;M+=1)b<m[M].length&&(k[B]=m[M][b],B+=1);for(let b=0;b<c;b+=1)for(let M=0;M<f.length;M+=1)b<x[M].length&&(k[B]=x[M][b],B+=1);return k},L=function(o,f,n){let u=G.getRSBlocks(o,f),c=Y();for(let x=0;x<n.length;x+=1){let C=n[x];c.put(C.getMode(),4),c.put(C.getLength(),O.getLengthInBits(C.getMode(),o)),C.write(c)}let m=0;for(let x=0;x<u.length;x+=1)m+=u[x].dataCount;if(c.getLengthInBits()>m*8)throw"code length overflow. ("+c.getLengthInBits()+">"+m*8+")";for(c.getLengthInBits()+4<=m*8&&c.put(0,4);c.getLengthInBits()%8!=0;)c.putBit(!1);for(;!(c.getLengthInBits()>=m*8||(c.put(236,8),c.getLengthInBits()>=m*8));)c.put(17,8);return T(c,u)};y.addData=function(o,f){f=f||"Byte";let n=null;switch(f){case"Numeric":n=tt(o);break;case"Alphanumeric":n=et(o);break;case"Byte":n=nt(o);break;case"Kanji":n=rt(o);break;default:throw"mode:"+f}w.push(n),i=null},y.isDark=function(o,f){if(o<0||t<=o||f<0||t<=f)throw o+","+f;return e[o][f]},y.getModuleCount=function(){return t},y.make=function(){if(r<1){let o=1;for(;o<40;o++){let f=G.getRSBlocks(o,a),n=Y();for(let c=0;c<w.length;c++){let m=w[c];n.put(m.getMode(),4),n.put(m.getLength(),O.getLengthInBits(m.getMode(),o)),m.write(n)}let u=0;for(let c=0;c<f.length;c++)u+=f[c].dataCount;if(n.getLengthInBits()<=u*8)break}r=o}h(!1,A())},y.createTableTag=function(o,f){o=o||2,f=typeof f>"u"?o*4:f;let n="";n+='<table style="',n+=" border-width: 0px; border-style: none;",n+=" border-collapse: collapse;",n+=" padding: 0px; margin: "+f+"px;",n+='">',n+="<tbody>";for(let u=0;u<y.getModuleCount();u+=1){n+="<tr>";for(let c=0;c<y.getModuleCount();c+=1)n+='<td style="',n+=" border-width: 0px; border-style: none;",n+=" border-collapse: collapse;",n+=" padding: 0px; margin: 0px;",n+=" width: "+o+"px;",n+=" height: "+o+"px;",n+=" background-color: ",n+=y.isDark(u,c)?"#000000":"#ffffff",n+=";",n+='"/>';n+="</tr>"}return n+="</tbody>",n+="</table>",n},y.createSvgTag=function(o,f,n,u){let c={};typeof arguments[0]=="object"&&(c=arguments[0],o=c.cellSize,f=c.margin,n=c.alt,u=c.title),o=o||2,f=typeof f>"u"?o*4:f,n=typeof n=="string"?{text:n}:n||{},n.text=n.text||null,n.id=n.text?n.id||"qrcode-description":null,u=typeof u=="string"?{text:u}:u||{},u.text=u.text||null,u.id=u.text?u.id||"qrcode-title":null;let m=y.getModuleCount()*o+f*2,x,C,k,B,b="",M;for(M="l"+o+",0 0,"+o+" -"+o+",0 0,-"+o+"z ",b+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',b+=c.scalable?"":' width="'+m+'px" height="'+m+'px"',b+=' viewBox="0 0 '+m+" "+m+'" ',b+=' preserveAspectRatio="xMinYMin meet"',b+=u.text||n.text?' role="img" aria-labelledby="'+I([u.id,n.id].join(" ").trim())+'"':"",b+=">",b+=u.text?'<title id="'+I(u.id)+'">'+I(u.text)+"</title>":"",b+=n.text?'<description id="'+I(n.id)+'">'+I(n.text)+"</description>":"",b+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',b+='<path d="',k=0;k<y.getModuleCount();k+=1)for(B=k*o+f,x=0;x<y.getModuleCount();x+=1)y.isDark(k,x)&&(C=x*o+f,b+="M"+C+","+B+M);return b+='" stroke="transparent" fill="black"/>',b+="</svg>",b},y.createDataURL=function(o,f){o=o||2,f=typeof f>"u"?o*4:f;let n=y.getModuleCount()*o+f*2,u=f,c=n-f;return ct(n,n,function(m,x){if(u<=m&&m<c&&u<=x&&x<c){let C=Math.floor((m-u)/o),k=Math.floor((x-u)/o);return y.isDark(k,C)?0:1}else return 1})},y.createImgTag=function(o,f,n){o=o||2,f=typeof f>"u"?o*4:f;let u=y.getModuleCount()*o+f*2,c="";return c+="<img",c+=' src="',c+=y.createDataURL(o,f),c+='"',c+=' width="',c+=u,c+='"',c+=' height="',c+=u,c+='"',n&&(c+=' alt="',c+=I(n),c+='"'),c+="/>",c};let I=function(o){let f="";for(let n=0;n<o.length;n+=1){let u=o.charAt(n);switch(u){case"<":f+="&lt;";break;case">":f+="&gt;";break;case"&":f+="&amp;";break;case'"':f+="&quot;";break;default:f+=u;break}}return f},H=function(o){o=typeof o>"u"?2:o;let n=y.getModuleCount()*1+o*2,u=o,c=n-o,m,x,C,k,B,b={"██":"█","█ ":"▀"," █":"▄","  ":" "},M={"██":"▀","█ ":"▀"," █":" ","  ":" "},N="";for(m=0;m<n;m+=2){for(C=Math.floor((m-u)/1),k=Math.floor((m+1-u)/1),x=0;x<n;x+=1)B="█",u<=x&&x<c&&u<=m&&m<c&&y.isDark(C,Math.floor((x-u)/1))&&(B=" "),u<=x&&x<c&&u<=m+1&&m+1<c&&y.isDark(k,Math.floor((x-u)/1))?B+=" ":B+="█",N+=o<1&&m+1>=c?M[B]:b[B];N+=\`
+\`}return n%2&&o>0?N.substring(0,N.length-n-1)+Array(n+1).join("▀"):N.substring(0,N.length-1)};return y.createASCII=function(o,f){if(o=o||1,o<2)return H(f);o-=1,f=typeof f>"u"?o*2:f;let n=y.getModuleCount()*o+f*2,u=f,c=n-f,m,x,C,k,B=Array(o+1).join("██"),b=Array(o+1).join("  "),M="",N="";for(m=0;m<n;m+=1){for(C=Math.floor((m-u)/o),N="",x=0;x<n;x+=1)k=1,u<=x&&x<c&&u<=m&&m<c&&y.isDark(C,Math.floor((x-u)/o))&&(k=0),N+=k?B:b;for(C=0;C<o;C+=1)M+=N+\`
+\`}return M.substring(0,M.length-1)},y.renderTo2dContext=function(o,f){f=f||2;let n=y.getModuleCount();for(let u=0;u<n;u++)for(let c=0;c<n;c++)o.fillStyle=y.isDark(u,c)?"black":"white",o.fillRect(c*f,u*f,f,f)},y};j.stringToBytes=function(g){let l=[];for(let p=0;p<g.length;p+=1){let s=g.charCodeAt(p);l.push(s&255)}return l};j.createStringToBytes=function(g,l){let p=(function(){let r=st(g),a=function(){let i=r.read();if(i==-1)throw"eof";return i},e=0,t={};for(;;){let i=r.read();if(i==-1)break;let w=a(),y=a(),h=a(),d=String.fromCharCode(i<<8|w),A=y<<8|h;t[d]=A,e+=1}if(e!=l)throw e+" != "+l;return t})(),s=63;return function(r){let a=[];for(let e=0;e<r.length;e+=1){let t=r.charCodeAt(e);if(t<128)a.push(t);else{let i=p[r.charAt(e)];typeof i=="number"?(i&255)==i?a.push(i):(a.push(i>>>8),a.push(i&255)):a.push(s)}}return a}};var D={MODE_NUMBER:1,MODE_ALPHA_NUM:2,MODE_8BIT_BYTE:4,MODE_KANJI:8},K={L:1,M:0,Q:3,H:2},$={PATTERN000:0,PATTERN001:1,PATTERN010:2,PATTERN011:3,PATTERN100:4,PATTERN101:5,PATTERN110:6,PATTERN111:7},O=(function(){let g=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],l=1335,p=7973,s=21522,r={},a=function(e){let t=0;for(;e!=0;)t+=1,e>>>=1;return t};return r.getBCHTypeInfo=function(e){let t=e<<10;for(;a(t)-a(l)>=0;)t^=l<<a(t)-a(l);return(e<<10|t)^s},r.getBCHTypeNumber=function(e){let t=e<<12;for(;a(t)-a(p)>=0;)t^=p<<a(t)-a(p);return e<<12|t},r.getPatternPosition=function(e){return g[e-1]},r.getMaskFunction=function(e){switch(e){case $.PATTERN000:return function(t,i){return(t+i)%2==0};case $.PATTERN001:return function(t,i){return t%2==0};case $.PATTERN010:return function(t,i){return i%3==0};case $.PATTERN011:return function(t,i){return(t+i)%3==0};case $.PATTERN100:return function(t,i){return(Math.floor(t/2)+Math.floor(i/3))%2==0};case $.PATTERN101:return function(t,i){return t*i%2+t*i%3==0};case $.PATTERN110:return function(t,i){return(t*i%2+t*i%3)%2==0};case $.PATTERN111:return function(t,i){return(t*i%3+(t+i)%2)%2==0};default:throw"bad maskPattern:"+e}},r.getErrorCorrectPolynomial=function(e){let t=F([1],0);for(let i=0;i<e;i+=1)t=t.multiply(F([1,U.gexp(i)],0));return t},r.getLengthInBits=function(e,t){if(1<=t&&t<10)switch(e){case D.MODE_NUMBER:return 10;case D.MODE_ALPHA_NUM:return 9;case D.MODE_8BIT_BYTE:return 8;case D.MODE_KANJI:return 8;default:throw"mode:"+e}else if(t<27)switch(e){case D.MODE_NUMBER:return 12;case D.MODE_ALPHA_NUM:return 11;case D.MODE_8BIT_BYTE:return 16;case D.MODE_KANJI:return 10;default:throw"mode:"+e}else if(t<41)switch(e){case D.MODE_NUMBER:return 14;case D.MODE_ALPHA_NUM:return 13;case D.MODE_8BIT_BYTE:return 16;case D.MODE_KANJI:return 12;default:throw"mode:"+e}else throw"type:"+t},r.getLostPoint=function(e){let t=e.getModuleCount(),i=0;for(let h=0;h<t;h+=1)for(let d=0;d<t;d+=1){let A=0,S=e.isDark(h,d);for(let _=-1;_<=1;_+=1)if(!(h+_<0||t<=h+_))for(let E=-1;E<=1;E+=1)d+E<0||t<=d+E||_==0&&E==0||S==e.isDark(h+_,d+E)&&(A+=1);A>5&&(i+=3+A-5)}for(let h=0;h<t-1;h+=1)for(let d=0;d<t-1;d+=1){let A=0;e.isDark(h,d)&&(A+=1),e.isDark(h+1,d)&&(A+=1),e.isDark(h,d+1)&&(A+=1),e.isDark(h+1,d+1)&&(A+=1),(A==0||A==4)&&(i+=3)}for(let h=0;h<t;h+=1)for(let d=0;d<t-6;d+=1)e.isDark(h,d)&&!e.isDark(h,d+1)&&e.isDark(h,d+2)&&e.isDark(h,d+3)&&e.isDark(h,d+4)&&!e.isDark(h,d+5)&&e.isDark(h,d+6)&&(i+=40);for(let h=0;h<t;h+=1)for(let d=0;d<t-6;d+=1)e.isDark(d,h)&&!e.isDark(d+1,h)&&e.isDark(d+2,h)&&e.isDark(d+3,h)&&e.isDark(d+4,h)&&!e.isDark(d+5,h)&&e.isDark(d+6,h)&&(i+=40);let w=0;for(let h=0;h<t;h+=1)for(let d=0;d<t;d+=1)e.isDark(d,h)&&(w+=1);let y=Math.abs(100*w/t/t-50)/5;return i+=y*10,i},r})(),U=(function(){let g=new Array(256),l=new Array(256);for(let s=0;s<8;s+=1)g[s]=1<<s;for(let s=8;s<256;s+=1)g[s]=g[s-4]^g[s-5]^g[s-6]^g[s-8];for(let s=0;s<255;s+=1)l[g[s]]=s;let p={};return p.glog=function(s){if(s<1)throw"glog("+s+")";return l[s]},p.gexp=function(s){for(;s<0;)s+=255;for(;s>=256;)s-=255;return g[s]},p})(),F=function(g,l){if(typeof g.length>"u")throw g.length+"/"+l;let p=(function(){let r=0;for(;r<g.length&&g[r]==0;)r+=1;let a=new Array(g.length-r+l);for(let e=0;e<g.length-r;e+=1)a[e]=g[e+r];return a})(),s={};return s.getAt=function(r){return p[r]},s.getLength=function(){return p.length},s.multiply=function(r){let a=new Array(s.getLength()+r.getLength()-1);for(let e=0;e<s.getLength();e+=1)for(let t=0;t<r.getLength();t+=1)a[e+t]^=U.gexp(U.glog(s.getAt(e))+U.glog(r.getAt(t)));return F(a,0)},s.mod=function(r){if(s.getLength()-r.getLength()<0)return s;let a=U.glog(s.getAt(0))-U.glog(r.getAt(0)),e=new Array(s.getLength());for(let t=0;t<s.getLength();t+=1)e[t]=s.getAt(t);for(let t=0;t<r.getLength();t+=1)e[t]^=U.gexp(U.glog(r.getAt(t))+a);return F(e,0).mod(r)},s},G=(function(){let g=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],l=function(r,a){let e={};return e.totalCount=r,e.dataCount=a,e},p={},s=function(r,a){switch(a){case K.L:return g[(r-1)*4+0];case K.M:return g[(r-1)*4+1];case K.Q:return g[(r-1)*4+2];case K.H:return g[(r-1)*4+3];default:return}};return p.getRSBlocks=function(r,a){let e=s(r,a);if(typeof e>"u")throw"bad rs block @ typeNumber:"+r+"/errorCorrectionLevel:"+a;let t=e.length/3,i=[];for(let w=0;w<t;w+=1){let y=e[w*3+0],h=e[w*3+1],d=e[w*3+2];for(let A=0;A<y;A+=1)i.push(l(h,d))}return i},p})(),Y=function(){let g=[],l=0,p={};return p.getBuffer=function(){return g},p.getAt=function(s){let r=Math.floor(s/8);return(g[r]>>>7-s%8&1)==1},p.put=function(s,r){for(let a=0;a<r;a+=1)p.putBit((s>>>r-a-1&1)==1)},p.getLengthInBits=function(){return l},p.putBit=function(s){let r=Math.floor(l/8);g.length<=r&&g.push(0),s&&(g[r]|=128>>>l%8),l+=1},p},tt=function(g){let l=D.MODE_NUMBER,p=g,s={};s.getMode=function(){return l},s.getLength=function(e){return p.length},s.write=function(e){let t=p,i=0;for(;i+2<t.length;)e.put(r(t.substring(i,i+3)),10),i+=3;i<t.length&&(t.length-i==1?e.put(r(t.substring(i,i+1)),4):t.length-i==2&&e.put(r(t.substring(i,i+2)),7))};let r=function(e){let t=0;for(let i=0;i<e.length;i+=1)t=t*10+a(e.charAt(i));return t},a=function(e){if("0"<=e&&e<="9")return e.charCodeAt(0)-48;throw"illegal char :"+e};return s},et=function(g){let l=D.MODE_ALPHA_NUM,p=g,s={};s.getMode=function(){return l},s.getLength=function(a){return p.length},s.write=function(a){let e=p,t=0;for(;t+1<e.length;)a.put(r(e.charAt(t))*45+r(e.charAt(t+1)),11),t+=2;t<e.length&&a.put(r(e.charAt(t)),6)};let r=function(a){if("0"<=a&&a<="9")return a.charCodeAt(0)-48;if("A"<=a&&a<="Z")return a.charCodeAt(0)-65+10;switch(a){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+a}};return s},nt=function(g){let l=D.MODE_8BIT_BYTE,p=g,s=j.stringToBytes(g),r={};return r.getMode=function(){return l},r.getLength=function(a){return s.length},r.write=function(a){for(let e=0;e<s.length;e+=1)a.put(s[e],8)},r},rt=function(g){let l=D.MODE_KANJI,p=g,s=j.stringToBytes;(function(e,t){let i=s(e);if(i.length!=2||(i[0]<<8|i[1])!=t)throw"sjis not supported."})("友",38726);let r=s(g),a={};return a.getMode=function(){return l},a.getLength=function(e){return~~(r.length/2)},a.write=function(e){let t=r,i=0;for(;i+1<t.length;){let w=(255&t[i])<<8|255&t[i+1];if(33088<=w&&w<=40956)w-=33088;else if(57408<=w&&w<=60351)w-=49472;else throw"illegal char at "+(i+1)+"/"+w;w=(w>>>8&255)*192+(w&255),e.put(w,13),i+=2}if(i<t.length)throw"illegal char at "+(i+1)},a},Z=function(){let g=[],l={};return l.writeByte=function(p){g.push(p&255)},l.writeShort=function(p){l.writeByte(p),l.writeByte(p>>>8)},l.writeBytes=function(p,s,r){s=s||0,r=r||p.length;for(let a=0;a<r;a+=1)l.writeByte(p[a+s])},l.writeString=function(p){for(let s=0;s<p.length;s+=1)l.writeByte(p.charCodeAt(s))},l.toByteArray=function(){return g},l.toString=function(){let p="";p+="[";for(let s=0;s<g.length;s+=1)s>0&&(p+=","),p+=g[s];return p+="]",p},l},ot=function(){let g=0,l=0,p=0,s="",r={},a=function(t){s+=String.fromCharCode(e(t&63))},e=function(t){if(t<0)throw"n:"+t;if(t<26)return 65+t;if(t<52)return 97+(t-26);if(t<62)return 48+(t-52);if(t==62)return 43;if(t==63)return 47;throw"n:"+t};return r.writeByte=function(t){for(g=g<<8|t&255,l+=8,p+=1;l>=6;)a(g>>>l-6),l-=6},r.flush=function(){if(l>0&&(a(g<<6-l),g=0,l=0),p%3!=0){let t=3-p%3;for(let i=0;i<t;i+=1)s+="="}},r.toString=function(){return s},r},st=function(g){let l=g,p=0,s=0,r=0,a={};a.read=function(){for(;r<8;){if(p>=l.length){if(r==0)return-1;throw"unexpected end of file./"+r}let i=l.charAt(p);if(p+=1,i=="=")return r=0,-1;if(i.match(/^\\s$/))continue;s=s<<6|e(i.charCodeAt(0)),r+=6}let t=s>>>r-8&255;return r-=8,t};let e=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(t==43)return 62;if(t==47)return 63;throw"c:"+t};return a},it=function(g,l){let p=g,s=l,r=new Array(g*l),a={};a.setPixel=function(w,y,h){r[y*p+w]=h},a.write=function(w){w.writeString("GIF87a"),w.writeShort(p),w.writeShort(s),w.writeByte(128),w.writeByte(0),w.writeByte(0),w.writeByte(0),w.writeByte(0),w.writeByte(0),w.writeByte(255),w.writeByte(255),w.writeByte(255),w.writeString(","),w.writeShort(0),w.writeShort(0),w.writeShort(p),w.writeShort(s),w.writeByte(0);let y=2,h=t(y);w.writeByte(y);let d=0;for(;h.length-d>255;)w.writeByte(255),w.writeBytes(h,d,255),d+=255;w.writeByte(h.length-d),w.writeBytes(h,d,h.length-d),w.writeByte(0),w.writeString(";")};let e=function(w){let y=w,h=0,d=0,A={};return A.write=function(S,_){if(S>>>_)throw"length over";for(;h+_>=8;)y.writeByte(255&(S<<h|d)),_-=8-h,S>>>=8-h,d=0,h=0;d=S<<h|d,h=h+_},A.flush=function(){h>0&&y.writeByte(d)},A},t=function(w){let y=1<<w,h=(1<<w)+1,d=w+1,A=i();for(let v=0;v<y;v+=1)A.add(String.fromCharCode(v));A.add(String.fromCharCode(y)),A.add(String.fromCharCode(h));let S=Z(),_=e(S);_.write(y,d);let E=0,P=String.fromCharCode(r[E]);for(E+=1;E<r.length;){let v=String.fromCharCode(r[E]);E+=1,A.contains(P+v)?P=P+v:(_.write(A.indexOf(P),d),A.size()<4095&&(A.size()==1<<d&&(d+=1),A.add(P+v)),P=v)}return _.write(A.indexOf(P),d),_.write(h,d),_.flush(),S.toByteArray()},i=function(){let w={},y=0,h={};return h.add=function(d){if(h.contains(d))throw"dup key:"+d;w[d]=y,y+=1},h.size=function(){return y},h.indexOf=function(d){return w[d]},h.contains=function(d){return typeof w[d]<"u"},h};return a},ct=function(g,l,p){let s=it(g,l);for(let t=0;t<l;t+=1)for(let i=0;i<g;i+=1)s.setPixel(i,t,p(i,t));let r=Z();s.write(r);let a=ot(),e=r.toByteArray();for(let t=0;t<e.length;t+=1)a.writeByte(e[t]);return a.flush(),"data:image/gif;base64,"+a},X=j,lt=j.stringToBytes;function V(g,l=400){return Object.assign(new Error(g),{status:l})}function q(g){let l=String(g??"").trim(),p=!1;if(/^\\[[0-9a-fA-F:]+\\]$/.test(l))try{l=new URL("https://"+l).hostname,p=!0}catch{}let s=/^(?:\\d{1,3}\\.){3}\\d{1,3}$/.test(l)&&l.split(".").every(a=>Number(a)<=255),r=l.length<=253&&!/^[\\d.]+$/.test(l)&&l.split(".").every(a=>/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(a));if(!p&&!s&&!r)throw V("入口地址必须是域名、IPv4 或带方括号的 IPv6");return l}function z(g,l=""){let p=[],s=[],r=(T,L,I)=>p.push({label:T,status:L,detail:I}),a=()=>({checks:p,fields:s,valid:!p.some(T=>T.status==="error"),reachability:"unverified"});if(typeof g!="string"||!g.trim()||g.length>8192)return r("链接内容","error","请粘贴一条不超过 8192 字符的节点链接"),a();let e;try{e=new URL(g.trim())}catch{return r("链接格式","error","无法解析链接，请检查协议前缀与入口地址"),a()}let t=e.protocol.slice(0,-1);if(!["vless","trojan","ss"].includes(t))return r("代理协议","error","支持 VLESS、Trojan 和带 v2ray-plugin 的 Shadowsocks 链接"),a();s.push(["协议",t.toUpperCase()],["入口",e.hostname+(e.port?":"+e.port:"")]);let i="",w,y,h,d;try{if(t==="ss"){let T=atob(decodeURIComponent(e.username).replace(/-/g,"+").replace(/_/g,"/")),L=T.indexOf(":");i=L<0?"":T.slice(L+1);let I=L<0?"":T.slice(0,L);["aes-128-gcm","aes-256-gcm"].includes(I)||r("加密方式","error","当前实例仅支持 aes-128-gcm 和 aes-256-gcm");let H=(e.searchParams.get("plugin")||"").split(/(?<!\\\\);/),o=Object.fromEntries(H.slice(1).map(f=>{let n=f.indexOf("=");return n<0?[f,!0]:[f.slice(0,n),f.slice(n+1)]}));(H[0]!=="v2ray-plugin"||o.mode!=="websocket")&&r("传输方式","error","当前 SS 节点需要 v2ray-plugin 的 WebSocket 模式"),w="ws",y=o.host,h=o.path,d=o.tls===!0}else i=decodeURIComponent(e.username),w=e.searchParams.get("type"),y=e.searchParams.get(w==="grpc"?"authority":"host"),h=e.searchParams.get(w==="grpc"?"serviceName":"path"),d=e.searchParams.get("security")==="tls",["ws","grpc","xhttp"].includes(w)||r("传输方式","error","当前实例支持 WebSocket、gRPC 和 XHTTP")}catch{return r("认证与插件参数","error","认证编码或插件参数无法解析"),a()}let A=!!i&&(t!=="vless"||/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(i));r("认证字段",A?"ok":"error",A?"已包含认证信息（不在报告中展示）":"缺少有效认证信息，VLESS 需要标准 UUID");let S=Number(e.port),_=!1;try{q(e.hostname),_=!!e.port&&Number.isInteger(S)&&S>=1&&S<=65535}catch{}r("入口地址",_?"ok":"error",_?"入口地址与端口格式有效":"需要有效的入口地址和 1–65535 端口");let E=typeof h=="string"&&h.length>0&&!/[\\x00-\\x1f\\x7f]/.test(h)&&(w==="grpc"||h.startsWith("/"));r("传输路径",E?"ok":"error",E?"已提供路径或服务名称":"检查 path 或 serviceName；WS/XHTTP 路径需以 / 开头");let P=t==="ss"?y:e.searchParams.get("sni"),v=T=>{if(typeof T!="string"||T.length>260||/[\\s/@?#\\\\]/.test(T))return!1;try{let L=new URL("https://"+T).hostname;return L.startsWith("[")||L.split(".").every(I=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(I))}catch{return!1}};if((y&&!v(y)||P&&(!v(P)||!P.startsWith("[")&&P.includes(":")))&&r("路由域名格式","error","Host / Authority / SNI 包含无效字符，请核对域名"),r("域名与 TLS",d&&y&&P?"ok":"warning",d?y&&P?"已提供 TLS 路由域名":"域名字段不完整，请核对 Host / SNI":"未启用 TLS，请确认部署入口允许明文连接"),s.push(["传输",w||"未指定"],["TLS",d?"开启":"关闭"],["Host / Authority",y||"未指定"],["SNI",P||"未指定"],["路径 / 服务",h||"未指定"],["ALPN",e.searchParams.get("alpn")||"客户端默认"]),l)try{let T=new URL(l),L=decodeURIComponent(T.username);if(T.protocol==="ss:"){let H=atob(L.replace(/-/g,"+").replace(/_/g,"/"));L=H.slice(H.indexOf(":")+1)}r("实例认证",i===L?"ok":"warning",i===L?"与当前实例认证一致":"认证信息与当前实例不同，请确认链接所属实例");let I=T.searchParams.get("sni")||(T.searchParams.get("plugin")||"").match(/(?:^|;)host=([^;]+)/)?.[1];I&&P!==I&&r("实例域名","warning","SNI 与当前主节点不同，请确认该域名已绑定到实例")}catch{r("实例比对","warning","当前主节点无法解析，仅完成链接自身检查")}return a()}function ft(g){if(typeof g!="string"||!g||new TextEncoder().encode(g).length>2048)throw new Error("二维码内容长度必须在 1–2048 字节之间");let l=X(0,"M");try{l.addData(g,"Byte"),l.make()}catch{throw new Error("链接过长，无法生成二维码；仍可复制链接")}let p=l.getModuleCount(),s=4,r=5,a=(p+s*2)*r,e=[];for(let t=0;t<p;t++)for(let i=0;i<p;i++)l.isDark(t,i)&&e.push(\`<rect x="\${(i+s)*r}" y="\${(t+s)*r}" width="\${r}" height="\${r}"/>\`);return\`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 \${a} \${a}" width="\${a}" height="\${a}" shape-rendering="crispEdges" role="img" aria-label="节点二维码"><rect width="\${a}" height="\${a}" fill="#fff"/><g fill="#111">\${e.join("")}</g></svg>\`}window.QRCode={generateSVG:ft};window.NodeDiagnostics={inspect:z};})();
+`;
 
 // src/admin/ui/theme.js
 var 令牌 = `:root{color-scheme:dark;--bg1:#070b12;--bg2:#0b1220;--surf:#101828;--sunken:#0a101d;--raised:#151d30;--line:rgba(140,175,230,.16);--fg:#e6edf8;--mut:#8b9bb4;--acc:#5ea6ff;--acc2:#2fd4c8;--ok:#5ce6a0;--warn:#f2c14e;--err:#ff8a80;--btnfg:#06121f;--shadow:0 1px 2px rgba(0,0,0,.32),0 8px 24px rgba(0,0,0,.26);--shadow-lg:0 24px 64px rgba(0,0,0,.5)}
@@ -782,6 +580,71 @@ input:not([type="checkbox"]),select,textarea{min-height:44px}
 /* 环境变量表的 200px 固定标签列在窄屏会把值列压到不可读，改为按内容自适应 */
 td.mn,th.mn{width:auto;min-width:88px}
 .wrap{padding-bottom:96px}}
+/* 节点工作区：双栏生成、渐进展示详情、分页结果，沿用现有主题变量。 */
+[hidden]{display:none!important}
+#page-nodes{min-width:0}
+.node-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:8px 0 24px}
+.node-heading h2{font-size:26px;line-height:1.25;margin:0;font-weight:650;letter-spacing:-.5px}
+.node-eyebrow{font-size:12px;color:var(--acc2);margin:0 0 8px;letter-spacing:1px}
+.node-heading .dim{margin:10px 0 0}
+.node-jumps{display:flex;flex-wrap:wrap;gap:8px}
+.node-jumps a{display:inline-flex;align-items:center;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surf);font-size:13px}
+.node-workspace{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px}
+#page-nodes .card{padding:22px;border-radius:14px}
+#page-nodes .card h2{font-size:16px;letter-spacing:0}
+#page-nodes .card-head .dim{margin:6px 0 0}
+.node-quick .card-head{margin-bottom:0}
+.node-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.node-form-grid .field{min-width:0}
+.node-field-wide{grid-column:1/-1}
+#page-nodes .field .ctl{font-size:12px;letter-spacing:0;text-transform:none}
+#page-nodes .field .ctl::before{display:none}
+#page-nodes .field .hint{font-size:12px;opacity:1}
+#page-nodes input,#page-nodes select{min-height:44px}
+#page-nodes button.btn,#page-nodes button.iconbtn{min-height:44px}
+.node-submit{width:100%;margin-top:4px}
+.node-form-feedback{min-height:54px;padding-top:8px}
+.node-details{margin-top:14px;border-top:1px solid var(--line);padding-top:6px}
+.node-details summary{cursor:pointer;min-height:44px;padding:12px 0;color:var(--mut);font-size:13px;overflow-wrap:anywhere}
+.node-details summary:hover{color:var(--fg)}
+summary:focus-visible{outline:2px solid var(--acc2);outline-offset:3px;border-radius:4px}
+.node-preview{display:flex;flex-direction:column;min-width:0}
+.node-preview .node-actions{margin-top:auto;padding-top:18px}
+.node-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.node-note{font-size:12px;color:var(--mut);margin:14px 0 0;line-height:1.6}
+.node-facts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);margin:8px 0 12px;font-size:13px;gap:0}
+.node-facts:empty{display:none}
+.node-facts dt,.node-facts dd{padding:10px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;min-width:0}
+.node-facts dt{color:var(--mut)}
+.node-facts dd{margin:0;color:var(--fg);font-family:ui-monospace,"SF Mono",monospace}
+.node-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.node-search{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.node-search label{margin:0;color:var(--fg);font-size:13px}
+.node-search input{flex:1;min-width:160px;max-width:360px}
+.node-search .dim{font-size:12px}
+.node-list{min-width:0}
+.node-empty{color:var(--mut);text-align:center;padding:30px 16px;background:var(--sunken);border:1px dashed var(--line);border-radius:10px}
+.node-item{padding:16px 0;border-bottom:1px solid var(--line);min-width:0}
+.node-item-top{display:flex;justify-content:space-between;gap:16px;align-items:center;min-width:0}
+.node-item-title{min-width:0;flex:1}
+.node-item h3{font-size:14px;margin:0 0 5px;overflow-wrap:anywhere}
+.node-item .dim{font-size:12px;overflow-wrap:anywhere;margin:0}
+.node-item .node-details{margin:4px 0 0;border-top:0;padding:0}
+.node-item .node-details summary{min-height:32px;padding:6px 0;font-size:12px}
+.node-item .node-actions{margin:0}
+#btn-batch-more{margin-top:16px;width:100%}
+.node-checks{list-style:none;padding:0;margin:16px 0}
+.node-checks li{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;border-bottom:1px solid var(--line);padding:12px 0}
+.node-checks b{display:block;font-size:13px;margin-bottom:4px}
+.node-checks p{margin:0;font-size:13px;color:var(--mut);overflow-wrap:anywhere}
+.node-check-state{font-size:12px;font-weight:600;padding-top:2px}
+.node-check-state.ok{color:var(--ok)}.node-check-state.warning{color:var(--warn)}.node-check-state.error{color:var(--err)}
+.node-egress>summary{font-size:15px;color:var(--fg);font-weight:600}
+#n-form-error{padding:8px 12px;margin:0;border:1px solid var(--err);border-radius:8px}
+[aria-invalid="true"]{border-color:var(--err)}
+#qr-modal .box{background:var(--surf);color:var(--fg);overflow:auto}
+@media(max-width:800px){.node-workspace{grid-template-columns:minmax(0,1fr)}.node-heading{align-items:flex-start;flex-direction:column}.node-preview{min-height:260px}}
+@media(max-width:640px){#page-nodes .card{padding:16px}.node-heading h2{font-size:23px}.node-jumps{width:100%}.node-jumps a{flex:1;justify-content:center;padding:8px}.node-item-top{align-items:flex-start;flex-direction:column;gap:10px}.node-toolbar>.row{width:100%}.node-toolbar button{flex:1}.node-form-grid{gap:12px}.node-preview .node-actions button{flex:1}input:not([type="checkbox"]),select,textarea{font-size:16px}.node-facts{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr)}.node-item .node-details summary{min-height:44px;padding:12px 0}.node-heading{margin-bottom:18px}}
 `;
 function 样式CSS() {
   return 组件样式;
@@ -828,6 +691,23 @@ var 客户端脚本 = `
 (function () {
   var S = window.__ET__;
   function $(s) { return document.querySelector(s); }
+  var 编辑分组 = {
+    '#cfg': '#cfg,[id^="c-"],#btn-save-ess,#btn-save-json,#btn-cfg-import',
+    '#o-add': '#o-add,#btn-save-add,#btn-api-to-add,#btn-o-test-add',
+    '#o-lib-random': '#o-lib-random,#o-lib-count,#o-lib-port,#btn-save-lib'
+  };
+  function 设置编辑状态(key, state) {
+    $(key).dataset.loadState = state;
+    document.querySelectorAll(编辑分组[key]).forEach(function (el) { el.disabled = state !== 'ready'; });
+  }
+  function 编辑可用(key) {
+    if ($(key).dataset.loadState === 'ready') return true;
+    toast('内容尚未加载成功，请等待或重试后再编辑保存', false); return false;
+  }
+  function 编辑命令(tab, key, button) {
+    点('[data-tab="' + tab + '"]');
+    if (编辑可用(key)) 点(button);
+  }
 
   // —— Toast 队列：同时只显示一条，其余排队 ——
   var 提示队列 = [], 提示忙 = false;
@@ -943,17 +823,17 @@ var 客户端脚本 = `
     { 名: '复制 Clash 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-clash'); } },
     { 名: '复制 sing-box 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-singbox'); } },
     { 名: '打开二维码', 组: '节点', 跑: function () { 点('#btn-open-qr'); } },
-    { 名: '下载二维码 PNG', 组: '节点', 跑: function () { 点('#btn-open-qr'); setTimeout(function () { 点('#btn-qr-download'); }, 120); } },
+    { 名: '下载二维码 PNG', 组: '节点', 跑: function () { 显示二维码(S.link || '').then(function (ok) { if (ok) 点('#btn-qr-download'); }); } },
     { 名: '刷新用量', 组: '概览', 跑: function () { 点('#btn-refresh-usage'); } },
-    { 名: '刷新全部', 组: '概览', 跑: function () { 点('#btn-refresh-top'); } },
+    { 名: '立即查询用量', 组: '概览', 跑: function () { 点('#btn-refresh-top'); } },
     { 名: '配置：重新加载', 组: '配置', 跑: function () { 点('#btn-load-json'); } },
-    { 名: '配置：保存到 KV', 组: '配置', 跑: function () { 点('[data-tab="config"]'); setTimeout(function () { 点('#btn-save-json'); }, 120); } },
+    { 名: '配置：保存到 KV', 组: '配置', 跑: function () { 编辑命令('config', '#cfg', '#btn-save-json'); } },
     { 名: '配置：导出到剪贴板', 组: '配置', 跑: function () { 点('#btn-cfg-export'); } },
     { 名: '配置：从剪贴板导入', 组: '配置', 跑: function () { 点('#btn-cfg-import'); } },
     { 名: '配置：恢复上一版本', 组: '配置', 跑: function () { 点('#btn-restore'); } },
     { 名: '运维：保存 TG', 组: '运维', 跑: function () { 点('#btn-save-tg'); } },
     { 名: '运维：保存 CF 凭据', 组: '运维', 跑: function () { 点('#btn-save-cf'); } },
-    { 名: '运维：保存优选 IP', 组: '运维', 跑: function () { 点('#btn-save-add'); } },
+    { 名: '运维：保存优选 IP', 组: '运维', 跑: function () { 编辑命令('ops', '#o-add', '#btn-save-add'); } },
     { 名: '运维：复制诊断 JSON', 组: '运维', 跑: function () { 点('#btn-diag-copy'); } },
     { 名: '运维：重置配置为默认值', 组: '运维', 跑: function () { 点('#btn-init'); } },
     { 名: '切换主题', 组: '外观', 跑: function () { 设置主题(); } },
@@ -1155,6 +1035,7 @@ var 客户端脚本 = `
   }
   var 待保存配置 = null;
   function 请求保存配置() {
+    if (!编辑可用('#cfg')) return;
     var r = 校验编辑器();
     if (!r.ok) { toast('配置有 ' + r.errs.length + ' 处问题，已阻止保存', false); return; }
     var d = 生成差异(已加载配置文本, $('#cfg').value);
@@ -1198,22 +1079,29 @@ var 客户端脚本 = `
 
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
+  var 已访问页签 = {};
   function switchTab(btn) {
-    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
+    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); b.tabIndex = b === btn ? 0 : -1; });
     Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
     try { localStorage.setItem('et_admin_tab', btn.dataset.tab); } catch (e) {}
     if (btn.dataset.tab === 'overview') loadOverview();
-    if (btn.dataset.tab === 'config') loadConfig();
-    if (btn.dataset.tab === 'ops') { loadOps(); loadDiag(); }
+    if (btn.dataset.tab === 'config' && !已访问页签.config) loadConfig();
+    if (btn.dataset.tab === 'ops' && !已访问页签.ops) { loadOps(); loadDiag(); }
     if (btn.dataset.tab === 'nodes') loadNodes();
-    if (btn.dataset.tab === 'check' && !自检已跑) loadCheck(false);
+    已访问页签[btn.dataset.tab] = true;
   }
   tabs.forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn); }); });
-  (function () {
-    var saved = null;
-    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
-    if (saved) { var b = document.querySelector('[data-tab="' + saved + '"]'); if (b) switchTab(b); }
-  })();
+  tabs.forEach(function (btn, index) {
+    btn.addEventListener('keydown', function (e) {
+      var next;
+      if (e.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      else return;
+      e.preventDefault(); tabs[next].focus(); switchTab(tabs[next]);
+    });
+  });
 
   // 用量显示：区分「实时查询成功」「仅有历史快照」「无数据」三态，
   // 避免把"查不到"渲染成 "0 / 100,000 0.0%" 这种看似正常的假数据。
@@ -1259,7 +1147,7 @@ var 客户端脚本 = `
       渲染用量(use, rows);
       骨架完毕('#chart');
       var box = $('#chart'); if (!box) return;
-      if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（每次刷新用量后写入当日一条）</p>'; return; }
+      if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（用量变化时记录，最短间隔五分钟）</p>'; return; }
       // viewBox 宽度跟随容器实际像素宽：写死 640 会在宽屏上被等比放大成"柱子高得离谱"，
       // 且柱子被拉伸后 rx 与描边一起变形。按 1px≈1 用户单位渲染，高度固定在 150。
       var W = Math.max(320, Math.round(box.clientWidth || 640)), H = 150, pad = 26;
@@ -1297,14 +1185,22 @@ var 客户端脚本 = `
 
   // 节点与订阅
   function loadNodes() {
+    // S 是本次页面加载的配置快照；切换 Tab 时保留表单和对应生成结果。
+    var page = $('#page-nodes');
+    if (page.dataset.initialized === 'true') return;
     $('#nlink-code').textContent = S.link || '';
     $('#sub-link').textContent = 'https://' + S.host + '/sub?token=' + S.token;
-    var qr = $('#qr'), big = $('#qr-big');
+    $('#n-link-protocol').value = S.协议类型 || 'vless';
+    $('#n-link-transport').value = S.协议类型 === 'ss' ? 'ws' : S.传输协议 || 'ws';
+    $('#n-link-address').value = S.host || '';
+    $('#n-link-port').value = S.协议类型 === 'ss' && S.SS && !S.SS.TLS ? '80' : '443';
+    $('#n-link-remark').value = S.subname || '';
+    $('#n-link-path').value = S.path || '/';
+    var qr = $('#qr');
     try {
-      qr.innerHTML = window.QRCode.generateSVG(S.link || 'no-link');
-      qr.onclick = openQR; qr.style.cursor = 'pointer'; qr.title = '点击放大';
-      if (big) big.innerHTML = window.QRCode.generateSVG(S.link || 'no-link', 4);
-    } catch (e) { qr.innerHTML = '<p class="dim">二维码生成失败：' + e.message + '</p>'; }
+      qr.innerHTML = window.QRCode.generateSVG(S.link || '');
+      qr.onclick = function () { 显示二维码(S.link); }; qr.style.cursor = 'pointer'; qr.title = '点击放大';
+    } catch (e) { qr.textContent = '二维码生成失败：' + e.message; }
     var fmts = [['clash', 'Clash'], ['singbox', 'sing-box'], ['surge', 'Surge'], ['loon', 'Loon'], ['quanx', 'Quantumult X'], ['v2rayn', 'v2rayN'], ['shadowrocket', 'Shadowrocket']];
     $('#fmt-links').innerHTML = fmts.map(function (f) {
       return '<button type="button" class="btn ghost" data-fmt="' + f[0] + '">' + f[1] + '</button>';
@@ -1312,8 +1208,12 @@ var 客户端脚本 = `
     Array.prototype.slice.call(document.querySelectorAll('[data-fmt]')).forEach(function (b) {
       b.addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=' + b.dataset.fmt); });
     });
+    page.dataset.initialized = 'true';
   }
-  function openQR() { 打开弹层($('#qr-modal')); }
+  function 显示二维码(link) {
+    try { $('#qr-big').innerHTML = window.QRCode.generateSVG(link); 打开弹层($('#qr-modal')); return Promise.resolve(true); }
+    catch (e) { toast('二维码生成失败：' + e.message, false); return Promise.resolve(false); }
+  }
   function closeQR() { 关闭弹层($('#qr-modal')); }
   var _qrClose = document.getElementById('btn-qr-close');
   if (_qrClose) _qrClose.addEventListener('click', closeQR);
@@ -1337,8 +1237,172 @@ var 客户端脚本 = `
     img.onerror = function () { toast('二维码渲染失败', false); };
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
   });
-  $('#btn-open-qr').addEventListener('click', function () { 打开弹层($('#qr-modal')); });
+  $('#btn-open-qr').addEventListener('click', function () { 显示二维码(S.link || ''); });
   $('#btn-copy-link').addEventListener('click', function () { copy(S.link || ''); });
+  var 生成链接 = '', 预览序号 = 0, 批量节点 = [], 批量序号 = 0, 批量来源 = '', 批量显示数 = 20;
+  function 填充参数表(el, fields) {
+    el.replaceChildren();
+    fields.forEach(function (pair) { var dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = pair[0]; dd.textContent = pair[1]; el.appendChild(dt); el.appendChild(dd); });
+  }
+  function 设置预览状态(text, state) {
+    $('#n-preview-status').textContent = text;
+    $('#n-preview-badge').className = 'pill' + (state ? ' ' + state : '');
+    $('#n-preview-badge').textContent = state === 'ok' ? '已生成' : state === 'err' ? '请检查参数' : state === 'run' ? '生成中' : '等待生成';
+  }
+  function 清除生成结果() {
+    预览序号++; 生成链接 = '';
+    ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = true; });
+    $('#n-generated-link').textContent = '参数已修改，请重新生成预览';
+    $('#n-preview-summary').replaceChildren();
+    设置预览状态('参数已修改，请重新生成。', '');
+    $('#n-form-error').hidden = true;
+    批量序号++; 批量节点 = [];
+    $('#btn-batch-copy').disabled = true; $('#btn-batch-download').disabled = true; $('#n-batch-search').disabled = true;
+    $('#n-batch-filter-status').textContent = ''; $('#btn-batch-more').hidden = true;
+    $('#n-batch-list').replaceChildren();
+    $('#n-source-panel').hidden = true; $('#n-batch-sources').replaceChildren();
+    $('#n-batch-status').textContent = '参数已修改，请重新生成批量链接';
+  }
+  function 字段错误(el) {
+    if (el.validity.valid) return '';
+    if (el.id === 'n-link-port') return '端口必须是 1–65535 之间的整数';
+    return ((el.labels && el.labels[0]) ? el.labels[0].textContent : '该字段') + '不能为空或超出允许范围';
+  }
+  ['#n-link-protocol', '#n-link-transport', '#n-link-address', '#n-link-port', '#n-link-path', '#n-link-remark'].forEach(function (sel) {
+    $(sel).addEventListener('input', function () { this.removeAttribute('aria-invalid'); 清除生成结果(); });
+    $(sel).addEventListener('blur', function () {
+      var error = 字段错误(this);
+      if (error) { this.setAttribute('aria-invalid', 'true'); $('#n-form-error').textContent = error; $('#n-form-error').hidden = false; }
+    });
+  });
+  $('#n-link-protocol').addEventListener('change', function () {
+    if (this.value === 'ss') $('#n-link-transport').value = 'ws';
+    $('#n-link-transport').querySelectorAll('option').forEach(function (opt) { opt.disabled = $('#n-link-protocol').value === 'ss' && opt.value !== 'ws'; });
+  });
+  if (S.协议类型 === 'ss') $('#n-link-transport').querySelectorAll('option').forEach(function (opt) { opt.disabled = opt.value !== 'ws'; });
+  function 当前链接选项() {
+    return { 协议类型: $('#n-link-protocol').value, 传输协议: $('#n-link-transport').value, 地址: $('#n-link-address').value, 端口: $('#n-link-port').value, 路径: $('#n-link-path').value, 备注: $('#n-link-remark').value };
+  }
+  $('#n-link-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var form = this;
+    if (form.dataset.pending === 'true') return;
+    var invalid = Array.from(form.querySelectorAll('input')).find(function (el) { return !el.validity.valid; });
+    if (invalid) {
+      $('#n-form-error').textContent = 字段错误(invalid); $('#n-form-error').hidden = false; invalid.setAttribute('aria-invalid', 'true');
+      if (invalid.id === 'n-link-path') $('#n-advanced').open = true;
+      invalid.focus(); return;
+    }
+    var 本次序号 = ++预览序号;
+    生成链接 = ''; $('#n-form-error').hidden = true;
+    ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = true; });
+    $('#n-preview-summary').replaceChildren(); $('#n-generated-link').textContent = '生成中…';
+    设置预览状态('正在生成链接…', 'run');
+    form.dataset.pending = 'true'; $('#n-preview-panel').setAttribute('aria-busy', 'true');
+    $('#btn-generate-link').disabled = true; $('#btn-generate-link').textContent = '生成中…';
+    api('/admin/api/link-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(当前链接选项()) }).then(function (r) {
+      if (本次序号 !== 预览序号) return;
+      生成链接 = r.link; $('#n-generated-link').textContent = 生成链接;
+      填充参数表($('#n-preview-summary'), window.NodeDiagnostics.inspect(生成链接).fields.filter(function (p) { return ['协议','入口','传输','SNI'].includes(p[0]); }));
+      设置预览状态('链接已生成，可复制到客户端或继续检查参数。', 'ok');
+      ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = false; });
+    }).catch(function (e) {
+      if (本次序号 !== 预览序号) return;
+      $('#n-generated-link').textContent = '生成失败：' + e.message; 设置预览状态('生成失败，请修正参数后重试。', 'err');
+      $('#n-form-error').textContent = e.message; $('#n-form-error').hidden = false; $('#n-form-error').focus();
+    }).finally(function () {
+      form.dataset.pending = 'false'; $('#btn-generate-link').disabled = false; $('#btn-generate-link').textContent = '生成预览'; $('#n-preview-panel').setAttribute('aria-busy', 'false');
+    });
+  });
+  $('#btn-copy-generated').addEventListener('click', function () { if (生成链接) copy(生成链接); });
+  $('#btn-qr-generated').addEventListener('click', function () { if (生成链接) 显示二维码(生成链接); });
+  $('#btn-inspect-generated').addEventListener('click', function () { if (生成链接) 检查链接(生成链接, true); });
+  function 检查链接(link, focus) {
+    $('#n-inspect-input').value = link;
+    var report = window.NodeDiagnostics.inspect(link, S.link), target = $('#n-inspect-result');
+    target.replaceChildren();
+    var warning = report.checks.some(function (c) { return c.status === 'warning'; });
+    $('#n-inspect-status').textContent = (report.valid ? (warning ? '参数中有需要核对的项目。' : '参数格式检查通过。') : '发现参数问题，请按下方提示修正。') + '实际连通尚未验证。';
+    var list = document.createElement('ul'); list.className = 'node-checks';
+    report.checks.forEach(function (c) {
+      var li = document.createElement('li'), state = document.createElement('span'), info = document.createElement('div'), label = document.createElement('b'), detail = document.createElement('p');
+      state.className = 'node-check-state ' + c.status; state.textContent = c.status === 'ok' ? '通过' : c.status === 'warning' ? '注意' : '需修正';
+      label.textContent = c.label; detail.textContent = c.detail; info.appendChild(label); info.appendChild(detail); li.appendChild(state); li.appendChild(info); list.appendChild(li);
+    });
+    target.appendChild(list);
+    if (report.fields.length) { var facts = document.createElement('dl'); facts.className = 'node-facts'; 填充参数表(facts, report.fields); target.appendChild(facts); }
+    if (focus) { $('#node-diagnostics').scrollIntoView({ block: 'start' }); $('#n-inspect-status').focus({ preventScroll: true }); }
+  }
+  $('#n-inspect-form').addEventListener('submit', function (event) { event.preventDefault(); 检查链接($('#n-inspect-input').value, false); });
+  $('#n-inspect-input').addEventListener('input', function () { $('#n-inspect-result').replaceChildren(); $('#n-inspect-status').textContent = '链接已修改，请重新检查。'; });
+  function 渲染批量节点() {
+    var query = $('#n-batch-search').value.trim().toLowerCase();
+    var filtered = 批量节点.filter(function (n) { return (n.地址 + ' ' + n.备注).toLowerCase().includes(query); });
+    var list = $('#n-batch-list'); list.replaceChildren();
+    var visible = filtered.slice(0, 批量显示数), fragment = document.createDocumentFragment();
+    visible.forEach(function (n) {
+      var item = document.createElement('article'); item.className = 'node-item';
+      var top = document.createElement('div'); top.className = 'node-item-top';
+      var title = document.createElement('div'); title.className = 'node-item-title';
+      var name = document.createElement('h3'); name.textContent = n.备注;
+      var address = document.createElement('p'); address.className = 'dim'; address.textContent = n.地址 + ':' + n.端口 + ' · ' + (n.来源 === 'add' ? 'ADD.txt' : '当前优选');
+      title.appendChild(name); title.appendChild(address);
+      var actions = document.createElement('div'); actions.className = 'node-actions';
+      [['复制', function () { copy(n.链接); }], ['二维码', function () { 显示二维码(n.链接); }], ['检查', function () { 检查链接(n.链接, true); }]].forEach(function (action) {
+        var button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost'; button.textContent = action[0]; button.setAttribute('aria-label', action[0] + '：' + n.备注); button.addEventListener('click', action[1]); actions.appendChild(button);
+      });
+      top.appendChild(title); top.appendChild(actions); item.appendChild(top);
+      var details = document.createElement('details'); details.className = 'node-details';
+      var summary = document.createElement('summary'); summary.textContent = '链接详情';
+      var code = document.createElement('div'); code.className = 'mono'; code.textContent = n.链接;
+      details.appendChild(summary); details.appendChild(code); item.appendChild(details); fragment.appendChild(item);
+    });
+    if (!visible.length) { var empty = document.createElement('p'); empty.className = 'node-empty'; empty.textContent = query ? '没有匹配节点，试试其他地址或备注。' : '没有可导出的节点，请检查来源内容。'; fragment.appendChild(empty); }
+    list.appendChild(fragment);
+    $('#n-batch-filter-status').textContent = '匹配 ' + filtered.length + ' 条 · 已显示 ' + visible.length + ' 条';
+    $('#btn-batch-more').hidden = visible.length >= filtered.length;
+  }
+  $('#n-batch-search').addEventListener('input', function () { 批量显示数 = 20; 渲染批量节点(); });
+  $('#btn-batch-more').addEventListener('click', function () { 批量显示数 += 20; 渲染批量节点(); });
+  function 批量生成(source) {
+    var 本次序号 = ++批量序号;
+    批量节点 = []; 批量来源 = source; 批量显示数 = 20;
+    $('#btn-batch-copy').disabled = true; $('#btn-batch-download').disabled = true; $('#n-batch-search').disabled = true;
+    $('#n-batch-search').value = ''; $('#n-batch-filter-status').textContent = ''; $('#btn-batch-more').hidden = true;
+    $('#btn-batch-add').disabled = true; $('#btn-batch-preferred').disabled = true;
+    $('#n-batch-list').replaceChildren(); $('#node-batch').setAttribute('aria-busy', 'true');
+    $('#n-source-panel').hidden = true; $('#n-batch-sources').replaceChildren();
+    $('#n-batch-status').textContent = '正在读取' + (source === 'add' ? ' ADD.txt' : '当前优选结果') + '…';
+    api('/admin/api/link-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ source: source }, 当前链接选项())) }).then(function (r) {
+      if (本次序号 !== 批量序号) return;
+      批量节点 = r.节点 || [];
+      var sources = r.来源诊断 || [];
+      $('#n-source-panel').hidden = !sources.length;
+      $('#n-source-panel').open = sources.some(function (s) { return s.state !== 'ok'; });
+      sources.forEach(function (s) {
+        var li = document.createElement('li'), state = document.createElement('span'), info = document.createElement('div'), label = document.createElement('b'), detail = document.createElement('p');
+        var warning = ['empty', 'partial', 'fallback', 'limited'].includes(s.state);
+        state.className = 'node-check-state ' + (s.state === 'ok' ? 'ok' : warning ? 'warning' : 'error');
+        state.textContent = s.state === 'ok' ? '通过' : warning ? '注意' : '失败';
+        label.textContent = s.source; detail.textContent = s.message + (s.count && s.state !== 'limited' ? ' · ' + s.count + ' 条' : '');
+        info.appendChild(label); info.appendChild(detail); li.appendChild(state); li.appendChild(info); $('#n-batch-sources').appendChild(li);
+      });
+      $('#n-batch-status').textContent = (source === 'add' ? 'ADD.txt' : '当前优选') + '：生成 ' + 批量节点.length + ' 条 · 去重 ' + r.重复 + ' · 跳过 ' + r.跳过 + ' · 超限 ' + r.超限 + (r.未请求优选API数量 ? '；另有 ' + r.未请求优选API数量 + ' 个远端源未读取' : '');
+      $('#btn-batch-copy').disabled = !批量节点.length; $('#btn-batch-download').disabled = !批量节点.length; $('#n-batch-search').disabled = !批量节点.length;
+      渲染批量节点();
+    }).catch(function (e) { if (本次序号 === 批量序号) $('#n-batch-status').textContent = '批量生成失败：' + e.message; })
+      .finally(function () { $('#btn-batch-add').disabled = false; $('#btn-batch-preferred').disabled = false; $('#node-batch').setAttribute('aria-busy', 'false'); });
+  }
+  $('#btn-batch-add').addEventListener('click', function () { 批量生成('add'); });
+  $('#btn-batch-preferred').addEventListener('click', function () { 批量生成('preferred'); });
+  $('#btn-batch-copy').addEventListener('click', function () { if (批量节点.length) copy(批量节点.map(function (n) { return n.链接; }).join('\\n')); });
+  $('#btn-batch-download').addEventListener('click', function () {
+    if (!批量节点.length) return;
+    var blob = new Blob([批量节点.map(function (n) { return n.链接; }).join('\\n') + '\\n'], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'edgetunnel-' + 批量来源 + '-nodes.txt'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  });
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
   $('#btn-copy-singbox').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=singbox&native=1'); });
@@ -1364,8 +1428,11 @@ var 客户端脚本 = `
 
   // 配置
   function loadConfig() {
+    if ($('#cfg').dataset.loadState === 'loading') return;
+    设置编辑状态('#cfg', 'loading');
     api('/admin/config.json').then(function (cfg) {
       $('#cfg').value = JSON.stringify(cfg, null, 2);
+      设置编辑状态('#cfg', 'ready');
       已加载配置文本 = $('#cfg').value; 校验编辑器(); 编辑器渲染(); 恢复草稿提示();
       var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
       var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
@@ -1375,7 +1442,7 @@ var 客户端脚本 = `
       var ts = cfg.TLS分片; $('#c-TLS分片').value = (ts === 'Shadowrocket' || ts === 'Happ') ? ts : '';
       $('#c-ECH').checked = !!cfg.ECH;
       $('#c-启用0RTT').checked = !!cfg.启用0RTT;
-    }).catch(function (e) { statusCfg('加载失败：' + e.message); });
+    }).catch(function (e) { 设置编辑状态('#cfg', 'failed'); statusCfg('加载失败：' + e.message + '，请点击重新加载'); });
   }
   function statusCfg(m) { var s = $('#cfg-status'); if (s) s.textContent = m; }
   $('#btn-load-json').addEventListener('click', function () { loadConfig(); statusCfg(''); });
@@ -1397,6 +1464,7 @@ var 客户端脚本 = `
     api('/admin/config/restore', { method: 'POST' }).then(function (r) { statusCfg('已提交：' + (r.message || '')); }).catch(function (e) { statusCfg('恢复失败：' + e.message); });
   });
   $('#btn-save-ess').addEventListener('click', function () {
+    if (!编辑可用('#cfg')) return;
     api('/admin/config.json').then(function (cfg) {
       cfg.协议类型 = $('#c-协议类型').value; cfg.传输协议 = $('#c-传输协议').value;
       cfg.PATH = $('#c-PATH').value; cfg.Fingerprint = $('#c-Fingerprint').value;
@@ -1444,12 +1512,18 @@ var 客户端脚本 = `
     if (st) st.textContent = '共 ' + 总行 + ' 行 · 去重后 ' + 优选IP条目.length + ' 条 · 样例: ' + entry.slice(0, 3).map(function (e) { return e.host + ':' + e.port; }).join(', ');
   }
   function loadOps() {
-    取文本('/admin/ADD.txt').then(function (t) {
-      骨架完毕('#o-add');
-      var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
-      if (typeof t === 'string') { $('#o-add').value = t; 解析优选IP(t); }
-    }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
-    加载优选配置().catch(function (e) { 设文本('#o-lib-note', '优选配置加载失败：' + e.message); });
+    if (!['loading', 'ready'].includes($('#o-add').dataset.loadState)) {
+      设置编辑状态('#o-add', 'loading');
+      取文本('/admin/ADD.txt').then(function (t) {
+        if (typeof t !== 'string') throw new Error('地址库响应无效');
+        $('#o-add').value = t; 解析优选IP(t); 设置编辑状态('#o-add', 'ready');
+        骨架完毕('#o-add');
+        var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
+      }).catch(function (e) { 设置编辑状态('#o-add', 'failed'); 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
+    }
+    if (!['loading', 'ready'].includes($('#o-lib-random').dataset.loadState)) {
+      加载优选配置().catch(function (e) { 内联错误('#o-lib-note', '优选配置加载失败：' + e.message, loadOps); });
+    }
   }
   function 设文本(sel, 文案) { var el = $(sel); if (el) el.textContent = 文案; }
 
@@ -1463,13 +1537,14 @@ var 客户端脚本 = `
     优选API结果 = null;
     设徽章('#o-api-result', 'run', '验证中…');
     if (out) { out.textContent = ''; out.style.display = 'none'; }
-    取('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
+    api('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
       .then(function (r) {
         if (!r || !r.success) throw new Error((r && r.msg) || '接口未返回可用结果');
         var data = r.data || [];
         优选API结果 = data;
-        设徽章('#o-api-result', data.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
-        if (out) { out.textContent = data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
+        var 提示 = (r.sources || []).filter(function (s) { return s.state !== 'ok'; }).map(function (s) { return s.source + '：' + s.message; });
+        设徽章('#o-api-result', data.length && !提示.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
+        if (out) { out.textContent = (提示.length ? 提示.join('\\n') + '\\n' : '') + data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
         toast('优选 API 验证通过：' + data.length + ' 条', data.length > 0);
       })
       .catch(function (e) {
@@ -1481,6 +1556,7 @@ var 客户端脚本 = `
   });
   // 追加写入只改编辑器内容，不碰 KV：仍需用户确认后点「保存优选 IP」。
   $('#btn-api-to-add').addEventListener('click', function () {
+    if (!编辑可用('#o-add')) return;
     if (!优选API结果 || !优选API结果.length) { toast('请先验证优选 API', false); return; }
     var ta = $('#o-add');
     var 已有 = {};
@@ -1504,15 +1580,18 @@ var 客户端脚本 = `
 
   // —— 本地 IP 库：读的是生效配置，写的是 KV cfg:{host}（与「常用字段」同一入口）——
   function 加载优选配置() {
+    设置编辑状态('#o-lib-random', 'loading');
     return 取('/admin/config.json').then(function (cfg) {
       var 生成 = (cfg && cfg.优选订阅生成) || {}, 库 = 生成.本地IP库 || {};
       if ($('#o-lib-random')) $('#o-lib-random').checked = !!库.随机IP;
       if ($('#o-lib-count')) $('#o-lib-count').value = 库.随机数量 != null ? 库.随机数量 : 16;
       if ($('#o-lib-port')) $('#o-lib-port').value = 库.指定端口 != null ? 库.指定端口 : -1;
+      设置编辑状态('#o-lib-random', 'ready');
       设文本('#o-lib-note', 生成.local ? '当前：本地优选地址' : '当前：优选订阅生成器（SUB）');
-    });
+    }).catch(function (e) { 设置编辑状态('#o-lib-random', 'failed'); throw e; });
   }
   $('#btn-save-lib').addEventListener('click', function () {
+    if (!编辑可用('#o-lib-random')) return;
     var 数量 = Number($('#o-lib-count').value.trim()), 端口 = Number($('#o-lib-port').value.trim());
     if (!Number.isInteger(数量) || 数量 < 1 || 数量 > 100) { toast('随机数量须为 1–100 的整数', false); return; }
     if (!Number.isInteger(端口) || (端口 !== -1 && (端口 < 1 || 端口 > 65535))) { toast('指定端口须为 -1 或 1–65535', false); return; }
@@ -1597,6 +1676,7 @@ var 客户端脚本 = `
   }
   $('#btn-refresh-usage').addEventListener('click', function () { 刷新用量(false); });
   $('#btn-save-add').addEventListener('click', function () {
+    if (!编辑可用('#o-add')) return;
     fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: $('#o-add').value })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (r) { toast(r.message || '已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
@@ -1791,8 +1871,7 @@ var 客户端脚本 = `
   $('#btn-run-check').addEventListener('click', function () { loadCheck(false); });
   $('#btn-run-deep').addEventListener('click', function () { loadCheck(true); });
   $('#btn-copy-check').addEventListener('click', 复制自检);
-  // 首屏若停留在自检 Tab，自动跑一次快捷自检（深度诊断需手动触发）。
-  try { if (localStorage.getItem('et_admin_tab') === 'check') loadCheck(false); } catch (e) {}
+  // 自检仅在用户点击按钮时运行，切换页签不触发出站探测。
   // 从节点链接提取凭据：ss 链接是 ss://base64(加密方式:凭据)@host…，
   // 直接按 '@' 切分会得到 base64 串，诊断 JSON 里的 uuid 就是错的。
   function 从链接取凭据(link) {
@@ -1829,6 +1908,7 @@ var 客户端脚本 = `
     copy($('#cfg').value);
   });
   $('#btn-cfg-import').addEventListener('click', function () {
+    if (!编辑可用('#cfg')) return;
     if (!navigator.clipboard || !navigator.clipboard.readText) { toast('浏览器不支持剪贴板读取', false); return; }
     navigator.clipboard.readText().then(function (t) {
       var v;
@@ -1861,13 +1941,22 @@ var 客户端脚本 = `
 
   // 回到页面自动刷新用量；header 刷新
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') loadOverview();
+    if (document.visibilityState === 'visible' && document.querySelector('[data-tab="overview"].on')) loadOverview();
   });
-  // 页头刷新：用量走真实查询（此前只重绘，点"刷新"用量不会变），并刷新节点与诊断。
-  $('#btn-refresh-top').addEventListener('click', function () { loadNodes(); loadDiag(); 刷新用量(false); });
-  loadDiag();
+  // 页头明确标注刷新用量，避免覆盖正在编辑的配置与地址库。
+  $('#btn-refresh-top').addEventListener('click', function () { 刷新用量(false); });
 
-  loadOverview(); loadNodes(); loadConfig(); loadOps();
+  Object.keys(编辑分组).forEach(function (key) { 设置编辑状态(key, 'idle'); });
+  // 全局命令也能打开二维码，弹层不能放在隐藏页签内。
+  document.body.appendChild($('#qr-modal'));
+
+  // 所有组件初始化后，只加载当前页签，避免隐藏页签抢先读取或重置表单。
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
+    var initial = tabs.find(function (b) { return b.dataset.tab === saved; }) || tabs[0];
+    switchTab(initial);
+  })();
 })();
 `;
 
@@ -1918,50 +2007,71 @@ function 概览Tab(摘) {
 function 节点Tab() {
   return `
 <section class="page" id="page-nodes" role="tabpanel" data-page="nodes">
-  <div class="card">
-    <h2>主节点</h2>
-    <div class="mono" id="nlink-code"></div>
-    <div class="row">
-      <button type="button" class="btn" id="btn-copy-link">复制链接</button>
-      <button type="button" class="btn ghost" id="btn-copy-sub">复制通用订阅</button>
-      <button type="button" class="btn ghost" id="btn-copy-clash">复制 Clash 原生</button>
-      <button type="button" class="btn ghost" id="btn-copy-singbox">复制 sing-box 原生</button>
-      <button type="button" class="btn ghost" id="btn-open-qr">查看二维码</button>
+  <div class="node-heading">
+    <div><p class="node-eyebrow">节点工作区</p><h2>连接，从这里开始</h2><p class="dim">生成节点、导出订阅，或检查已有链接的参数。</p></div>
+    <div class="node-jumps" aria-label="节点页快捷入口"><a href="#node-builder">生成链接</a><a href="#node-batch">批量导出</a><a href="#node-diagnostics">检查链接</a></div>
+  </div>
+  <div class="card node-quick">
+    <div class="card-head"><div><h2>当前主节点</h2><p class="dim">使用当前配置，直接复制到客户端。</p></div><div class="row"><button type="button" class="btn ghost" id="btn-copy-link">复制主节点</button><button type="button" class="btn ghost" id="btn-open-qr">二维码</button></div></div>
+    <details class="node-details"><summary>查看主节点链接</summary><div class="mono" id="nlink-code"></div><div class="qr" id="qr" aria-label="节点二维码"></div></details>
+  </div>
+  <div class="node-workspace">
+    <div class="card" id="node-builder">
+      <div class="card-head"><h2>生成链接</h2><span class="pill">仅预览，不修改配置</span></div>
+      <form id="n-link-form" novalidate>
+        <div class="node-form-grid">
+          <div class="field"><label class="ctl" for="n-link-protocol">代理协议</label><select id="n-link-protocol"><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select></div>
+          <div class="field"><label class="ctl" for="n-link-transport">传输方式</label><select id="n-link-transport" aria-describedby="n-transport-help"><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="xhttp">XHTTP</option></select></div>
+          <div class="field node-field-wide"><label class="ctl" for="n-link-address">入口地址</label><input id="n-link-address" type="text" required spellcheck="false" autocomplete="off" placeholder="域名、IPv4 或 [IPv6]" aria-describedby="n-address-help" /><span class="hint" id="n-address-help">支持域名、IPv4 和带方括号的 IPv6。</span></div>
+          <div class="field"><label class="ctl" for="n-link-port">端口</label><input id="n-link-port" type="number" required min="1" max="65535" step="1" inputmode="numeric" /></div>
+          <div class="field"><label class="ctl" for="n-link-remark">节点备注</label><input id="n-link-remark" type="text" required maxlength="80" /></div>
+        </div>
+        <p class="dim" id="n-transport-help">VLESS / Trojan 支持三种传输；SS 仅支持 WebSocket。</p>
+        <details class="node-details" id="n-advanced"><summary>高级参数</summary><div class="field"><label class="ctl" for="n-link-path">路径 / 服务名称</label><input id="n-link-path" type="text" required maxlength="1024" spellcheck="false" /></div><p class="dim">默认沿用当前配置的路径、认证与 TLS 设置。</p></details>
+        <div class="node-form-feedback"><p id="n-form-error" class="err-inline" role="alert" tabindex="-1" hidden></p></div>
+        <button type="submit" class="btn node-submit" id="btn-generate-link">生成预览</button>
+      </form>
     </div>
-    <div class="qr" id="qr" aria-label="节点二维码"></div>
-  </div>
-  <div class="card">
-    <h2>订阅链接</h2>
-    <div class="mono" id="sub-link"></div>
-    <p class="dim">订阅更新周期：每 3 小时提示一次。Clash 订阅由本服务本地直出（代理组 + 自动选择/故障转移 + 精简分流规则），不经过第三方转换器；需要 ACL4SSR 全量规则时在链接后加 <b>&amp;converter=1</b>。sing-box 原生订阅仍是最小配置。</p>
-  </div>
-  <div class="card">
-    <h2>客户端格式</h2>
-    <p class="dim">以下链接在已登录会话下可直接复制（?target=clash/singbox/surge/loon/quanx/v2rayn/shadowrocket）。</p>
-    <div class="row" id="fmt-links"></div>
-  </div>
-  <div class="card">
-    <h2>代理连通测试</h2>
-    <div class="fld-grid">
-      <div class="field" style="min-width:140px"><label class="ctl" for="n-proto">协议</label><select id="n-proto">
-        <option value="socks5" selected>socks5</option>
-        <option value="http">http</option>
-        <option value="https">https</option>
-        <option value="turn">turn</option>
-        <option value="sstp">sstp</option>
-      </select></div>
-      <div class="field" style="grid-column:span 2;min-width:260px"><label class="ctl" for="n-test-uri">代理地址</label><input id="n-test-uri" type="text" placeholder="user:pass@host:port（缺省端口按协议默认）" spellcheck="false" /></div>
-    </div>
-    <div class="row" style="margin-top:14px"><button type="button" class="btn" id="btn-node-test">测试</button><span class="pill" id="n-test-result">未测试</span></div>
-    <p class="dim">复用 /admin/check：在 Worker 边缘实际建连，验证代理通道可用性与响应时间。</p>
-  </div>
-  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码">
-    <div class="box">
-      <div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div>
-      <div id="qr-big"></div>
-      <div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div>
+    <div class="card node-preview" id="n-preview-panel" aria-busy="false">
+      <div class="card-head"><h2>生成结果</h2><span class="pill" id="n-preview-badge">等待生成</span></div>
+      <p id="n-preview-status" class="dim" role="status" aria-live="polite">填写左侧参数，生成可复制的节点链接。</p>
+      <dl id="n-preview-summary" class="node-facts"></dl>
+      <details class="node-details"><summary>查看完整链接</summary><div class="mono" id="n-generated-link">尚未生成链接</div></details>
+      <div class="node-actions"><button type="button" class="btn" id="btn-copy-generated" disabled>复制链接</button><button type="button" class="btn ghost" id="btn-qr-generated" disabled>二维码</button><button type="button" class="btn ghost" id="btn-inspect-generated" disabled>检查参数</button></div>
+      <p class="node-note">生成成功仅表示参数可用。实际连通需在代理客户端中验证。</p>
     </div>
   </div>
+  <div class="card" id="node-batch">
+    <div class="card-head"><div><h2>批量节点</h2><p class="dim">沿用上方协议和路径，保留来源地址与备注。</p></div><span class="pill">最多 100 条</span></div>
+    <div class="node-toolbar"><div class="row"><button type="button" class="btn ghost" id="btn-batch-add">读取 ADD.txt</button><button type="button" class="btn ghost" id="btn-batch-preferred">读取当前优选</button></div><div class="row"><button type="button" class="btn ghost" id="btn-batch-copy" disabled>复制全部</button><button type="button" class="btn ghost" id="btn-batch-download" disabled>下载 TXT</button></div></div>
+    <p class="dim" id="n-batch-status" role="status" aria-live="polite">选择一个来源开始生成。ADD.txt 使用已保存的内容。</p>
+    <details id="n-source-panel" class="node-details" hidden><summary>优选来源诊断</summary><ul id="n-batch-sources" class="node-checks"></ul></details>
+    <div class="node-search"><label class="ctl" for="n-batch-search">查找节点</label><input id="n-batch-search" type="search" placeholder="搜索地址或备注" autocomplete="off" disabled /><span class="dim" id="n-batch-filter-status"></span></div>
+    <div id="n-batch-list" class="node-list"><p class="node-empty">节点列表将在这里显示。</p></div>
+    <button type="button" class="btn ghost" id="btn-batch-more" hidden>显示更多</button>
+    <details class="node-details"><summary>来源与导出说明</summary><p class="dim">当前优选可能请求远端优选源。无法保留反代规则的候选会跳过；筛选仅用于查找，复制与下载始终包含本次生成的全部节点。</p></details>
+  </div>
+  <div class="card" id="node-subscriptions">
+    <div class="card-head"><div><h2>客户端订阅</h2><p class="dim">将订阅地址添加到客户端，以便后续更新节点。</p></div></div>
+    <div class="row"><button type="button" class="btn ghost" id="btn-copy-sub">通用订阅</button><button type="button" class="btn ghost" id="btn-copy-clash">Clash 最小配置</button><button type="button" class="btn ghost" id="btn-copy-singbox">sing-box 最小配置</button></div>
+    <details class="node-details"><summary>更多客户端格式与订阅地址</summary><div class="row" id="fmt-links"></div><div class="mono" id="sub-link"></div><p class="dim">Clash 默认订阅包含代理组和精简分流规则；最小配置适合自行管理规则。其他客户端格式可能使用订阅转换器。</p></details>
+  </div>
+  <div class="card" id="node-diagnostics">
+    <div class="card-head"><div><h2>检查已有链接</h2><p class="dim">在本地浏览器检查格式与实例配置，不发送节点链接。</p></div><span class="pill">不测试网络</span></div>
+    <form id="n-inspect-form"><label for="n-inspect-input">节点链接</label><textarea id="n-inspect-input" rows="3" maxlength="8192" required spellcheck="false" placeholder="粘贴 vless://、trojan:// 或 ss:// 链接"></textarea><div class="node-actions"><button type="submit" class="btn ghost" id="btn-inspect-link">检查参数</button></div></form>
+    <p class="dim" id="n-inspect-status" role="status" aria-live="polite" tabindex="-1">也可以从生成结果或批量节点中直接检查。</p>
+    <div id="n-inspect-result"></div>
+  </div>
+  <details class="card node-details node-egress">
+    <summary>出站代理通道测试</summary>
+    <p class="dim">供已配置 SOCKS5 / HTTP 等出站代理时使用。测试由 Worker 建立代理通道，不代表上方节点入口或端到端连接可用。</p>
+    <div class="node-form-grid">
+      <div class="field"><label class="ctl" for="n-proto">出站协议</label><select id="n-proto"><option value="socks5">SOCKS5</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="turn">TURN</option><option value="sstp">SSTP</option></select></div>
+      <div class="field"><label class="ctl" for="n-test-uri">代理地址</label><input id="n-test-uri" type="text" placeholder="user:pass@host:port" spellcheck="false" /></div>
+    </div>
+    <div class="node-actions"><button type="button" class="btn ghost" id="btn-node-test">测试通道</button><span class="pill" id="n-test-result">未测试</span></div>
+  </details>
+  <div id="qr-modal" role="dialog" aria-modal="true" aria-label="节点二维码"><div class="box"><div class="row" style="justify-content:space-between"><b>节点二维码</b><button type="button" class="iconbtn" id="btn-qr-close">关闭</button></div><div id="qr-big"></div><div class="row" style="justify-content:center;margin-top:12px"><button type="button" class="btn" id="btn-qr-download">下载 PNG</button></div></div></div>
 </section>`;
 }
 
@@ -2261,7 +2371,7 @@ function 页头(sse) {
   <div class="row">
     <button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色主题">${图标("theme")}主题</button>
     <button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">${图标("motion")}动效</button>
-    <button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">${图标("refresh")}刷新</button>
+    <button type="button" class="iconbtn" id="btn-refresh-top" title="查询最新用量，不重载编辑内容">${图标("refresh")}用量</button>
     <a class="lnk" href="#top">${图标("up")}置顶</a>
     <a class="lnk" href="/logout">${图标("logout")}退出登录</a>
   </div>
@@ -2357,10 +2467,17 @@ function 替换星号为随机字符(内容) {
     return s;
   });
 }
+var 常用路径目录 = ["about", "account", "acg", "act", "activity", "ad", "ads", "ajax", "album", "albums", "anime", "api", "app", "apps", "archive", "archives", "article", "articles", "ask", "auth", "avatar", "bbs", "bd", "blog", "blogs", "book", "books", "bt", "buy", "cart", "category", "categories", "cb", "channel", "channels", "chat", "china", "city", "class", "classify", "clip", "clips", "club", "cn", "code", "collect", "collection", "comic", "comics", "community", "company", "config", "contact", "content", "course", "courses", "cp", "data", "detail", "details", "dh", "directory", "discount", "discuss", "dl", "dload", "doc", "docs", "document", "documents", "doujin", "download", "downloads", "drama", "edu", "en", "ep", "episode", "episodes", "event", "events", "f", "faq", "favorite", "favourites", "favs", "feedback", "file", "files", "film", "films", "forum", "forums", "friend", "friends", "game", "games", "gif", "go", "go.html", "go.php", "group", "groups", "help", "home", "hot", "htm", "html", "image", "images", "img", "index", "info", "intro", "item", "items", "ja", "jp", "jump", "jump.html", "jump.php", "jumping", "knowledge", "lang", "lesson", "lessons", "lib", "library", "link", "links", "list", "live", "lives", "m", "mag", "magnet", "mall", "manhua", "map", "member", "members", "message", "messages", "mobile", "movie", "movies", "music", "my", "new", "news", "note", "novel", "novels", "online", "order", "out", "out.html", "out.php", "outbound", "p", "page", "pages", "pay", "payment", "pdf", "photo", "photos", "pic", "pics", "picture", "pictures", "play", "player", "playlist", "post", "posts", "product", "products", "program", "programs", "project", "qa", "question", "rank", "ranking", "read", "readme", "redirect", "redirect.html", "redirect.php", "reg", "register", "res", "resource", "retrieve", "sale", "search", "season", "seasons", "section", "seller", "series", "service", "services", "setting", "settings", "share", "shop", "show", "shows", "site", "soft", "sort", "source", "special", "star", "stars", "static", "stock", "store", "stream", "streaming", "streams", "student", "study", "tag", "tags", "task", "teacher", "team", "tech", "temp", "test", "thread", "tool", "tools", "topic", "topics", "torrent", "trade", "travel", "tv", "txt", "type", "u", "upload", "uploads", "url", "urls", "user", "users", "v", "version", "videos", "view", "vip", "vod", "watch", "web", "wenku", "wiki", "work", "www", "zh", "zh-cn", "zh-tw", "zip"];
 function 随机路径(完整节点路径 = "/") {
-  const 常用路径目录 = ["about", "account", "acg", "act", "activity", "ad", "ads", "ajax", "album", "albums", "anime", "api", "app", "apps", "archive", "archives", "article", "articles", "ask", "auth", "avatar", "bbs", "bd", "blog", "blogs", "book", "books", "bt", "buy", "cart", "category", "categories", "cb", "channel", "channels", "chat", "china", "city", "class", "classify", "clip", "clips", "club", "cn", "code", "collect", "collection", "comic", "comics", "community", "company", "config", "contact", "content", "course", "courses", "cp", "data", "detail", "details", "dh", "directory", "discount", "discuss", "dl", "dload", "doc", "docs", "document", "documents", "doujin", "download", "downloads", "drama", "edu", "en", "ep", "episode", "episodes", "event", "events", "f", "faq", "favorite", "favourites", "favs", "feedback", "file", "files", "film", "films", "forum", "forums", "friend", "friends", "game", "games", "gif", "go", "go.html", "go.php", "group", "groups", "help", "home", "hot", "htm", "html", "image", "images", "img", "index", "info", "intro", "item", "items", "ja", "jp", "jump", "jump.html", "jump.php", "jumping", "knowledge", "lang", "lesson", "lessons", "lib", "library", "link", "links", "list", "live", "lives", "m", "mag", "magnet", "mall", "manhua", "map", "member", "members", "message", "messages", "mobile", "movie", "movies", "music", "my", "new", "news", "note", "novel", "novels", "online", "order", "out", "out.html", "out.php", "outbound", "p", "page", "pages", "pay", "payment", "pdf", "photo", "photos", "pic", "pics", "picture", "pictures", "play", "player", "playlist", "post", "posts", "product", "products", "program", "programs", "project", "qa", "question", "rank", "ranking", "read", "readme", "redirect", "redirect.html", "redirect.php", "reg", "register", "res", "resource", "retrieve", "sale", "search", "season", "seasons", "section", "seller", "series", "service", "services", "setting", "settings", "share", "shop", "show", "shows", "site", "soft", "sort", "source", "special", "star", "stars", "static", "stock", "store", "stream", "streaming", "streams", "student", "study", "tag", "tags", "task", "teacher", "team", "tech", "temp", "test", "thread", "tool", "tools", "topic", "topics", "torrent", "trade", "travel", "tv", "txt", "type", "u", "upload", "uploads", "url", "urls", "user", "users", "v", "version", "videos", "view", "vip", "vod", "watch", "web", "wenku", "wiki", "work", "www", "zh", "zh-cn", "zh-tw", "zip"];
   const 随机数 = Math.floor(Math.random() * 3 + 1);
-  const 随机路径2 = 常用路径目录.sort(() => 0.5 - Math.random()).slice(0, 随机数).join("/");
+  const 交换索引 = /* @__PURE__ */ new Map(), 片段 = [];
+  for (let i = 0; i < 随机数; i++) {
+    const 剩余 = 常用路径目录.length - i;
+    const 索引 = Math.floor(Math.random() * 剩余);
+    片段.push(常用路径目录[交换索引.get(索引) ?? 索引]);
+    交换索引.set(索引, 交换索引.get(剩余 - 1) ?? 剩余 - 1);
+  }
+  const 随机路径2 = 片段.join("/");
   if (完整节点路径 === "/") return `/${随机路径2}`;
   else return `/${随机路径2 + 完整节点路径.replace("/?", "?")}`;
 }
@@ -2426,6 +2543,95 @@ function 是拦截UA(ua) {
   const trimmed = ua.trim();
   if (监控探测UA.test(trimmed)) return false;
   return 拦截UA前缀.test(trimmed);
+}
+
+// src/core/link.js
+function 规范入口地址(input) {
+  let 地址 = String(input ?? "").trim();
+  let IPv6 = false;
+  if (/^\[[0-9a-fA-F:]+\]$/.test(地址)) {
+    try {
+      地址 = new URL("https://" + 地址).hostname;
+      IPv6 = true;
+    } catch (_) {
+    }
+  }
+  const IPv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(地址) && 地址.split(".").every((n) => Number(n) <= 255);
+  const 域名 = 地址.length <= 253 && !/^[\d.]+$/.test(地址) && 地址.split(".").every((s) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(s));
+  if (!IPv6 && !IPv4 && !域名) throw 输入错误("入口地址必须是域名、IPv4 或带方括号的 IPv6");
+  return 地址;
+}
+function 校验链接预览选项(原始, 配置, host) {
+  if (!原始 || typeof 原始 !== "object" || Array.isArray(原始)) throw 输入错误("预览参数必须是对象");
+  const 协议类型 = 原始.协议类型 ?? 配置.协议类型;
+  const 传输协议 = 原始.传输协议 ?? 配置.传输协议;
+  if (!["vless", "trojan", "ss"].includes(协议类型)) throw 输入错误("不支持的代理协议");
+  if (!["ws", "grpc", "xhttp"].includes(传输协议)) throw 输入错误("不支持的传输方式");
+  let 地址 = String(原始.地址 ?? host).trim();
+  const 端口 = Number(原始.端口 ?? (协议类型 === "ss" && !配置.SS.TLS ? 80 : 443));
+  const 路径 = String(原始.路径 ?? 配置.完整节点路径);
+  const 备注 = String(原始.备注 ?? 配置.优选订阅生成.SUBNAME).trim();
+  地址 = 规范入口地址(地址);
+  if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) throw 输入错误("端口必须在 1–65535 之间");
+  if (!路径.startsWith("/") || 路径.length > 1024 || /[\s#\\]/.test(路径)) throw 输入错误("路径必须以 / 开头，且不能包含空格、# 或反斜杠");
+  if (协议类型 === "ss" && 路径.includes(";")) throw 输入错误("SS 路径不能包含分号，请使用 %3B 编码");
+  if (!备注 || 备注.length > 80 || /[\x00-\x1f\x7f]/.test(备注)) throw 输入错误("备注必须为 1–80 个字符，且不能包含控制字符");
+  if (协议类型 === "ss" && 传输协议 !== "ws") throw 输入错误("SS 链接仅支持 WebSocket 传输");
+  return { 协议类型, 传输协议, 地址, 端口, 路径, 备注 };
+}
+function 获取链接附加参数(配置) {
+  return {
+    ECH参数: 配置.ECH ? `&ech=${encodeURIComponent((配置.ECHConfig.SNI ? 配置.ECHConfig.SNI + "+" : "") + 配置.ECHConfig.DNS)}` : "",
+    TLS分片参数: 配置.TLS分片 === "Shadowrocket" ? `&fragment=${encodeURIComponent("1,40-60,30-50,tlshello")}` : 配置.TLS分片 === "Happ" ? `&fragment=${encodeURIComponent("3,1,tlshello")}` : ""
+  };
+}
+function 创建节点模型(配置, 用户ID, host, 选项 = {}, 兼容 = {}) {
+  const 有效配置 = { ...配置, 协议类型: 选项.协议类型 || 配置.协议类型, 传输协议: 选项.传输协议 || 配置.传输协议 };
+  const 附加参数 = 获取链接附加参数(配置);
+  const model = {
+    protocol: 有效配置.协议类型,
+    credential: 用户ID,
+    address: 选项.地址 || host,
+    domain: 选项.域名 || host,
+    port: String(选项.端口 || (有效配置.协议类型 === "ss" && !配置.SS.TLS ? 80 : 443)),
+    remark: 选项.备注 ?? 配置.优选订阅生成.SUBNAME,
+    fingerprint: 配置.Fingerprint,
+    alpn: 配置.ALPN || "",
+    ech: 兼容.ECH参数 ?? 附加参数.ECH参数,
+    fragment: 兼容.TLS分片参数 ?? 附加参数.TLS分片参数
+  };
+  let path = 选项.路径 || 配置.完整节点路径;
+  if (model.protocol === "ss" && !兼容.订阅生成器) {
+    model.method = 配置.SS.加密方式;
+    if (兼容.订阅 && !配置.SS.TLS) {
+      const tls = [443, 2053, 2083, 2087, 2096, 8443], plain = [80, 2052, 2082, 2086, 2095, 8080];
+      model.port = String(plain[tls.indexOf(Number(model.port))] ?? model.port);
+    }
+    path = path.includes("?") ? path.replace("?", "?enc=" + model.method + "&") : path + "?enc=" + model.method;
+    if (兼容.订阅) {
+      path = path.replace(/([=,])/g, "\\$1");
+      if (!兼容.转换器请求) path += ";mux=0";
+      if (配置.随机路径) path = 随机路径(path);
+      model.plugin = "ray-plugin;mode=websocket;host=" + model.domain + ";path=" + path + (配置.SS.TLS ? ";tls" : "");
+    } else {
+      model.plugin = "ray-plugin;mode=websocket;host=" + model.domain + ";path=" + path + (配置.SS.TLS ? ";tls" : "") + ";mux=0";
+      model.fragment = "";
+    }
+  } else {
+    const transport = 获取传输协议配置(有效配置);
+    model.type = transport.type;
+    model.hostKey = transport.域名字段名;
+    model.pathKey = transport.路径字段名;
+    model.path = 获取传输路径参数值(有效配置, path, !!兼容.订阅生成器);
+  }
+  return model;
+}
+function 序列化节点链接(model) {
+  if (model.plugin !== void 0) return `${model.protocol}://${btoa(model.method + ":" + model.credential)}@${model.address}:${model.port}?plugin=v2${encodeURIComponent(model.plugin) + model.ech + model.fragment}#${encodeURIComponent(model.remark)}`;
+  return `${model.protocol}://${model.credential}@${model.address}:${model.port}?security=tls&type=${model.type + model.ech}&${model.hostKey}=${model.domain}&fp=${model.fingerprint}&sni=${model.domain}&${model.pathKey}=${encodeURIComponent(model.path) + model.fragment}&encryption=none${model.alpn ? "&alpn=" + encodeURIComponent(model.alpn) : ""}#${encodeURIComponent(model.remark)}`;
+}
+function 生成主节点链接(配置, 用户ID, host, 选项 = {}) {
+  return 序列化节点链接(创建节点模型(配置, 用户ID, host, 选项));
 }
 
 // src/core/strings.js
@@ -2547,6 +2753,9 @@ async function 写入用量快照(env, host, usage) {
   const rows = await 读取用量历史(env, host);
   const last = rows[rows.length - 1];
   if (last && last.date === date) {
+    if (["pages", "workers", "total", "max"].every((k) => last[k] === { pages, workers, total, max }[k])) return;
+    const 上次更新 = Date.parse(last.updatedAt);
+    if (Number.isFinite(上次更新) && Date.now() >= 上次更新 && Date.now() - 上次更新 < 3e5) return;
     last.pages = pages;
     last.workers = workers;
     last.total = total;
@@ -2765,14 +2974,10 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
   const 最终查询部分 = 反代查询参数 ? 查询部分 ? 查询部分 + "&" + 反代查询参数 : "?" + 反代查询参数 : 查询部分;
   config_JSON.完整节点路径 = (路径部分 || "/") + (路径部分 && 路径反代参数 ? "/" : "") + 路径反代参数 + 最终查询部分 + (config_JSON.启用0RTT ? (最终查询部分 ? "&" : "?") + "ed=2560" : "");
   if (!config_JSON.TLS分片 && config_JSON.TLS分片 !== null) config_JSON.TLS分片 = null;
-  const TLS分片参数 = config_JSON.TLS分片 == "Shadowrocket" ? `&fragment=${encodeURIComponent("1,40-60,30-50,tlshello")}` : config_JSON.TLS分片 == "Happ" ? `&fragment=${encodeURIComponent("3,1,tlshello")}` : "";
   if (!config_JSON.Fingerprint) config_JSON.Fingerprint = "chrome";
   if (!config_JSON.ECH) config_JSON.ECH = false;
   if (!config_JSON.ECHConfig) config_JSON.ECHConfig = { DNS: Ali_DoH, SNI: ECH_SNI };
-  const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + "+" : "") + config_JSON.ECHConfig.DNS)}` : "";
-  const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
-  const 传输路径参数值 = 获取传输路径参数值(config_JSON, config_JSON.完整节点路径);
-  config_JSON.LINK = config_JSON.协议类型 === "ss" ? `${config_JSON.协议类型}://${btoa(config_JSON.SS.加密方式 + ":" + userID)}@${host}:${config_JSON.SS.TLS ? "443" : "80"}?plugin=v2${encodeURIComponent(`ray-plugin;mode=websocket;host=${host};path=${(config_JSON.完整节点路径.includes("?") ? config_JSON.完整节点路径.replace("?", "?enc=" + config_JSON.SS.加密方式 + "&") : config_JSON.完整节点路径 + "?enc=" + config_JSON.SS.加密方式) + (config_JSON.SS.TLS ? ";tls" : "")};mux=0`) + ECHLINK参数}#${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}` : `${config_JSON.协议类型}://${userID}@${host}:443?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=${host}&fp=${config_JSON.Fingerprint}&sni=${host}&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none#${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
+  config_JSON.LINK = 生成主节点链接(config_JSON, userID, host);
   config_JSON.优选订阅生成.TOKEN = await MD5MD5(hostname + userID);
   const 初始化TG_JSON = { BotToken: null, ChatID: null };
   config_JSON.TG = { 启用: config_JSON.TG.启用 ? config_JSON.TG.启用 : false, ...初始化TG_JSON };
@@ -2823,7 +3028,7 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
     console.error(`读取cf.json出错: ${error.message}`);
   }
   config_JSON.加载时间 = (performance.now() - 初始化开始时间).toFixed(2) + "ms";
-  if (config缓存映射.size > 50) config缓存映射.clear();
+  if (config缓存映射.size >= 50 && !config缓存映射.has(缓存键)) config缓存映射.delete(config缓存映射.keys().next().value);
   if (加载世代 === 配置缓存世代) config缓存映射.set(缓存键, { t: Date.now(), v: structuredClone(config_JSON) });
   return config_JSON;
 }
@@ -7300,6 +7505,80 @@ async function 反代参数获取(url, uuid, 默认反代IP = "", 默认反代�
   return 反代上下文;
 }
 
+// src/proxy/source-fetch.js
+var 响应字节上限 = 512 * 1024;
+function 优选错误(state, httpStatus) {
+  return Object.assign(new Error("优选源请求失败"), { sourceState: state, httpStatus });
+}
+function 优选来源结果(source, state, count = 0, httpStatus) {
+  const messages = { ok: "成功解析", partial: "部分内容无效，已保留可用节点", empty: "返回空列表", parse_error: "返回内容无法解析为节点列表", timeout: "请求超时", network_error: "网络连接失败", invalid_url: "来源地址无效", too_large: "响应超过 512 KiB 限制", redirect_limit: "重定向次数超出限制", limited: "达到来源数量限制，未请求", fallback: "已使用内置地址段兜底" };
+  return { source, state, count, message: state === "http_error" ? "远端返回 HTTP " + httpStatus : messages[state] || messages.network_error };
+}
+async function 读取优选响应(input, timeout = 3e3, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  let reader;
+  try {
+    let url;
+    try {
+      url = new URL(input);
+    } catch (_) {
+      throw 优选错误("invalid_url");
+    }
+    let response;
+    for (let redirect = 0; ; redirect++) {
+      if (!["https:", "http:"].includes(url.protocol)) throw 优选错误("invalid_url");
+      response = await fetch(url.href, { headers, signal: controller.signal, redirect: "manual" });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      await response.body?.cancel();
+      if (redirect >= 2) throw 优选错误("redirect_limit");
+      const location = response.headers.get("location");
+      if (!location) throw 优选错误("invalid_url");
+      try {
+        url = new URL(location, url);
+      } catch (_) {
+        throw 优选错误("invalid_url");
+      }
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw 优选错误("http_error", response.status);
+    }
+    if (Number(response.headers.get("content-length")) > 响应字节上限) {
+      await response.body?.cancel();
+      throw 优选错误("too_large");
+    }
+    const chunks = [];
+    let size = 0;
+    if (response.body) {
+      reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 响应字节上限) {
+          await reader.cancel();
+          throw 优选错误("too_large");
+        }
+        chunks.push(value);
+      }
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { bytes, contentType: response.headers.get("content-type") || "" };
+  } catch (error) {
+    if (error.sourceState) throw error;
+    throw 优选错误(controller.signal.aborted || ["AbortError", "TimeoutError"].includes(error.name) ? "timeout" : "network_error");
+  } finally {
+    clearTimeout(timer);
+    reader?.releaseLock();
+  }
+}
+
 // src/proxy/preferred.js
 async function 生成随机IP(request, count = 16, 指定端口 = -1) {
   const url = new URL(request.url);
@@ -7315,17 +7594,25 @@ async function 生成随机IP(request, count = 16, 指定端口 = -1) {
   const cfname = 运营商名称映射[运营商文件标识] || "CF官方优选";
   const cfport = [443, 2053, 2083, 2087, 2096, 8443];
   let cidrList = [];
+  let 来源状态 = 优选来源结果("随机 IP 库", "ok");
   try {
-    const res = await fetch(cidr_url, { signal: AbortSignal.timeout(5e3) });
-    cidrList = res.ok ? await 整理成数组(await res.text()) : ["104.16.0.0/13"];
-  } catch {
+    const { bytes } = await 读取优选响应(cidr_url, 5e3);
+    const text = new TextDecoder().decode(bytes);
+    cidrList = (await 整理成数组(text)).map((s) => s.trim()).filter((s) => {
+      const parts = s.split("/");
+      return parts.length === 2 && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(parts[0]) && parts[0].split(".").every((n) => Number(n) <= 255) && /^\d+$/.test(parts[1]) && Number(parts[1]) <= 32;
+    });
+    if (!cidrList.length) throw 优选错误(text.trim() ? "parse_error" : "empty");
+  } catch (error) {
     cidrList = ["104.16.0.0/13"];
+    const 原因 = 优选来源结果("随机 IP 库", error.sourceState || "network_error", 0, error.httpStatus);
+    来源状态 = { ...优选来源结果("随机 IP 库", "fallback"), message: 原因.message + "；已使用内置地址段兜底" };
   }
   const generateRandomIPFromCIDR = (cidr) => {
     const [baseIP, prefixLength] = cidr.split("/"), prefix = parseInt(prefixLength), hostBits = 32 - prefix;
     const ipInt = baseIP.split(".").reduce((a, p, i) => a | parseInt(p) << 24 - i * 8, 0);
     const randomOffset = Math.floor(Math.random() * Math.pow(2, hostBits));
-    const mask = 4294967295 << hostBits >>> 0, randomIP = ((ipInt & mask) >>> 0) + randomOffset >>> 0;
+    const mask = prefix === 0 ? 0 : 4294967295 << hostBits >>> 0, randomIP = ((ipInt & mask) >>> 0) + randomOffset >>> 0;
     return [randomIP >>> 24 & 255, randomIP >>> 16 & 255, randomIP >>> 8 & 255, randomIP & 255].join(".");
   };
   const randomIPs = Array.from({ length: count }, (_, index) => {
@@ -7333,216 +7620,159 @@ async function 生成随机IP(request, count = 16, 指定端口 = -1) {
     const 目标端口 = 指定端口 === -1 ? cfport[Math.floor(Math.random() * cfport.length)] : 指定端口;
     return `${ip}:${目标端口}#${cfname}${index + 1}`;
   });
-  return [randomIPs, randomIPs.join("\n")];
+  return [randomIPs, randomIPs.join("\n"), { ...来源状态, count: randomIPs.length }];
 }
-async function 获取优选订阅生成器数据(优选订阅生成器HOST) {
-  let 优选IP = [], 其他节点LINK = "", 格式化HOST = 优选订阅生成器HOST.replace(/^sub:\/\//i, "https://").split("#")[0].split("?")[0];
-  if (!/^https?:\/\//i.test(格式化HOST)) 格式化HOST = `https://${格式化HOST}`;
+async function 获取优选订阅生成器数据(input, timeout = 8e3) {
+  const ips = [], links = [];
   try {
-    const url = new URL(格式化HOST);
-    格式化HOST = url.origin;
-  } catch (error) {
-    优选IP.push(`127.0.0.1:1234#${优选订阅生成器HOST}优选订阅生成器格式化异常:${error.message}`);
-    return [优选IP, 其他节点LINK];
-  }
-  const 优选订阅生成器URL = `${格式化HOST}/sub?host=example.com&uuid=00000000-0000-4000-8000-000000000000`;
-  try {
-    const response = await fetch(优选订阅生成器URL, {
-      headers: { "User-Agent": "v2rayN/edgetunnel (https://github.com/" + 特征码字典[1] + "/edgetunnel)" },
-      signal: AbortSignal.timeout(8e3)
-      // M2-P0.5：优选订阅生成器 8s 超时
-    });
-    if (!response.ok) {
-      优选IP.push(`127.0.0.1:1234#${优选订阅生成器HOST}优选订阅生成器异常:${response.statusText}`);
-      return [优选IP, 其他节点LINK];
+    if (typeof input !== "string" || !input.trim()) throw 优选错误("invalid_url");
+    let address = input.replace(/^sub:\/\//i, "https://").split("#")[0].split("?")[0];
+    if (!/^https?:\/\//i.test(address)) address = "https://" + address;
+    let origin;
+    try {
+      origin = new URL(address).origin;
+    } catch (_) {
+      throw 优选错误("invalid_url");
     }
-    const 优选订阅生成器返回订阅内容 = atob(await response.text());
-    const 订阅行列表 = 优选订阅生成器返回订阅内容.includes("\r\n") ? 优选订阅生成器返回订阅内容.split("\r\n") : 优选订阅生成器返回订阅内容.split("\n");
-    for (const 行内容 of 订阅行列表) {
-      if (!行内容.trim()) continue;
-      if (行内容.includes("00000000-0000-4000-8000-000000000000") && 行内容.includes("example.com")) {
-        const 地址匹配 = 行内容.match(/:\/\/[^@]+@([^?]+)/);
-        if (地址匹配) {
-          let 地址端口 = 地址匹配[1], 备注 = "";
-          const 备注匹配 = 行内容.match(/#(.+)$/);
-          if (备注匹配) 备注 = "#" + decodeURIComponent(备注匹配[1]);
-          优选IP.push(地址端口 + 备注);
-        }
-      } else {
-        其他节点LINK += 行内容 + "\n";
+    const { bytes } = await 读取优选响应(origin + "/sub?host=example.com&uuid=00000000-0000-4000-8000-000000000000", timeout, { "User-Agent": "v2rayN/edgetunnel (https://github.com/" + 特征码字典[1] + "/edgetunnel)" });
+    const raw = new TextDecoder().decode(bytes).trim();
+    if (!raw) return [ips, "", 优选来源结果("订阅生成器", "empty")];
+    let text;
+    try {
+      text = new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+    } catch (_) {
+      throw 优选错误("parse_error");
+    }
+    let invalid = 0;
+    for (const line of text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
+        invalid++;
+        continue;
       }
+      if (line.includes("00000000-0000-4000-8000-000000000000") && line.includes("example.com")) {
+        const match = line.match(/:\/\/[^@]+@([^?]+)/);
+        try {
+          if (!match) throw 优选错误("parse_error");
+          const remark = line.match(/#(.+)$/);
+          const parsed = 解析优选文本(match[1] + (remark ? "#" + decodeURIComponent(remark[1]) : ""), "443");
+          if (parsed.invalid || parsed.ips.length !== 1) throw 优选错误("parse_error");
+          ips.push(parsed.ips[0]);
+        } catch (_) {
+          invalid++;
+        }
+      } else links.push(line);
     }
+    const count = ips.length + links.length;
+    return [ips, links.length ? links.join("\n") + "\n" : "", 优选来源结果("订阅生成器", count ? invalid ? "partial" : "ok" : invalid ? "parse_error" : "empty", count)];
   } catch (error) {
-    优选IP.push(`127.0.0.1:1234#${优选订阅生成器HOST}优选订阅生成器异常:${error.message}`);
+    return [[], "", 优选来源结果("订阅生成器", error.sourceState || "parse_error", 0, error.httpStatus)];
   }
-  return [优选IP, 其他节点LINK];
+}
+function 解析优选文本(text, defaultPort) {
+  let decoded = text;
+  const clean = text.replace(/\s/g, "");
+  if (clean && clean.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(clean)) {
+    try {
+      decoded = new TextDecoder().decode(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
+    } catch (_) {
+    }
+  }
+  const ips = [], links = [];
+  let invalid = 0;
+  const add = (host, port, remark = "") => {
+    try {
+      const address = 规范入口地址(host);
+      if (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) throw 优选错误("parse_error");
+      if (!address.includes(".") && !address.startsWith("[")) throw 优选错误("parse_error");
+      ips.push(address + ":" + port + remark);
+    } catch (_) {
+      invalid++;
+    }
+  };
+  if (!decoded.trim() || decoded.trim() === "[]") return { ips, links, invalid };
+  const lines = decoded.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const headers = lines[0].split(",").map((s) => s.trim());
+  if (headers.includes("IP地址") && headers.includes("端口") && headers.includes("数据中心")) {
+    const ip = headers.indexOf("IP地址"), port = headers.indexOf("端口"), tls = headers.indexOf("TLS");
+    const name = headers.indexOf("国家") >= 0 ? headers.indexOf("国家") : headers.indexOf("城市") >= 0 ? headers.indexOf("城市") : headers.indexOf("数据中心");
+    for (const line of lines.slice(1)) {
+      const cols = line.split(",").map((s) => s.trim());
+      if (tls >= 0 && cols[tls]?.toLowerCase() !== "true") continue;
+      const host = cols[ip] || "";
+      add(host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host, cols[port], "#" + (cols[name] || host));
+    }
+  } else if (headers.some((s) => s.includes("IP")) && headers.some((s) => s.includes("延迟")) && headers.some((s) => s.includes("下载速度"))) {
+    const ip = headers.findIndex((s) => s.includes("IP")), delay = headers.findIndex((s) => s.includes("延迟")), speed = headers.findIndex((s) => s.includes("下载速度"));
+    for (const line of lines.slice(1)) {
+      const cols = line.split(",").map((s) => s.trim()), host = cols[ip] || "";
+      add(host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host, defaultPort, `#CF优选 ${cols[delay]}ms ${cols[speed]}MB/s`);
+    }
+  } else {
+    for (const line of lines) {
+      if (/^(?:vless|trojan|ss|vmess|hysteria2?|hy2|tuic|wireguard):\/\//i.test(line)) {
+        links.push(line);
+        continue;
+      }
+      const hash = line.indexOf("#"), hostPort = (hash < 0 ? line : line.slice(0, hash)).trim(), remark = hash < 0 ? "" : line.slice(hash);
+      if (!hostPort.startsWith("[") && (hostPort.match(/:/g) || []).length > 1) {
+        add("[" + hostPort + "]", defaultPort, remark);
+        continue;
+      }
+      const match = hostPort.match(/^(\[[^\]]+\]|[^:\s]+)(?::(\d+))?$/);
+      if (match) add(match[1], match[2] || defaultPort, remark);
+      else invalid++;
+    }
+  }
+  return { ips, links, invalid };
 }
 async function 请求优选API(urls, 默认端口 = "443", 超时时间 = 3e3) {
-  if (!urls?.length) return [[], [], [], []];
-  const results = /* @__PURE__ */ new Set(), 反代IP池 = /* @__PURE__ */ new Set();
-  let 订阅链接响应的明文LINK内容 = "", 需要订阅转换订阅URLs = [];
-  await Promise.allSettled(urls.map(async (url) => {
-    const hashIndex = url.indexOf("#");
-    const urlWithoutHash = hashIndex > -1 ? url.substring(0, hashIndex) : url;
-    const API备注名 = hashIndex > -1 ? decodeURIComponent(url.substring(hashIndex + 1)) : null;
-    const 优选IP作为反代IP = url.toLowerCase().includes("proxyip=true");
-    if (urlWithoutHash.toLowerCase().startsWith("sub://")) {
+  if (!urls?.length) return [[], [], [], [], []];
+  const outputs = new Array(urls.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < urls.length) {
+      const index = cursor++, source = "优选源 " + (index + 1), input = urls[index];
       try {
-        const [优选IP, 其他节点LINK] = await 获取优选订阅生成器数据(urlWithoutHash);
-        if (API备注名) {
-          for (const ip of 优选IP) {
-            const 处理后IP = ip.includes("#") ? `${ip} [${API备注名}]` : `${ip}#[${API备注名}]`;
-            results.add(处理后IP);
-            if (优选IP作为反代IP) 反代IP池.add(ip.split("#")[0]);
-          }
+        const hash = input.indexOf("#"), url = hash < 0 ? input : input.slice(0, hash), name = hash < 0 ? "" : decodeURIComponent(input.slice(hash + 1));
+        let ips, links, status;
+        if (url.toLowerCase().startsWith("sub://")) {
+          const result = await 获取优选订阅生成器数据(url, 超时时间);
+          ips = result[0];
+          links = result[1].trim() ? result[1].trim().split(/\r?\n/) : [];
+          status = { ...result[2], source };
         } else {
-          for (const ip of 优选IP) {
-            results.add(ip);
-            if (优选IP作为反代IP) 反代IP池.add(ip.split("#")[0]);
-          }
-        }
-        if (其他节点LINK && typeof 其他节点LINK === "string" && API备注名) {
-          const 处理后LINK内容 = 其他节点LINK.replace(/([a-z][a-z0-9+\-.]*:\/\/[^\r\n]*?)(\r?\n|$)/gi, (match, link, lineEnd) => {
-            const 完整链接 = link.includes("#") ? `${link}${encodeURIComponent(` [${API备注名}]`)}` : `${link}${encodeURIComponent(`#[${API备注名}]`)}`;
-            return `${完整链接}${lineEnd}`;
-          });
-          订阅链接响应的明文LINK内容 += 处理后LINK内容;
-        } else if (其他节点LINK && typeof 其他节点LINK === "string") {
-          订阅链接响应的明文LINK内容 += 其他节点LINK;
-        }
-      } catch (e) {
-      }
-      return;
-    }
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 超时时间);
-      const response = await fetch(urlWithoutHash, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      let text = "";
-      try {
-        const buffer = await response.arrayBuffer();
-        const contentType = (response.headers.get("content-type") || "").toLowerCase();
-        const charset = contentType.match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || "";
-        let decoders = ["utf-8", "gb2312"];
-        if (charset.includes("gb") || charset.includes("gbk") || charset.includes("gb2312")) {
-          decoders = ["gb2312", "utf-8"];
-        }
-        let decodeSuccess = false;
-        for (const decoder of decoders) {
-          try {
-            const decoded = new TextDecoder(decoder).decode(buffer);
-            if (decoded && decoded.length > 0 && !decoded.includes("�")) {
-              text = decoded;
-              decodeSuccess = true;
+          const { bytes, contentType } = await 读取优选响应(url, 超时时间);
+          const charset = contentType.toLowerCase().includes("charset=gb") ? ["gb2312", "utf-8"] : ["utf-8", "gb2312"];
+          let text = "";
+          for (const encoding of charset) {
+            try {
+              const value = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+              text = value;
               break;
-            } else if (decoded && decoded.length > 0) {
-              continue;
+            } catch (_) {
             }
-          } catch (e) {
-            continue;
           }
+          if (bytes.length && !text) throw 优选错误("parse_error");
+          const parsed = 解析优选文本(text, new URL(url).searchParams.get("port") || 默认端口);
+          ips = parsed.ips;
+          links = parsed.links;
+          const count = ips.length + links.length;
+          status = 优选来源结果(source, count ? parsed.invalid ? "partial" : "ok" : parsed.invalid ? "parse_error" : "empty", count);
         }
-        if (!decodeSuccess) {
-          text = await response.text();
-        }
-        if (!text || text.trim().length === 0) {
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to decode response:", e);
-        return;
+        const pool = input.toLowerCase().includes("proxyip=true") ? ips.map((s) => s.split("#")[0]) : [];
+        outputs[index] = {
+          ips: name ? ips.map((s) => s.includes("#") ? s + " [" + name + "]" : s + "#[" + name + "]") : ips,
+          links: name ? links.map((s) => s.includes("#") ? s + encodeURIComponent(" [" + name + "]") : s + "#" + encodeURIComponent("[" + name + "]")) : links,
+          pool,
+          status
+        };
+      } catch (error) {
+        outputs[index] = { ips: [], links: [], pool: [], status: 优选来源结果(source, error.sourceState || "parse_error", 0, error.httpStatus) };
       }
-      let 预处理订阅明文内容 = text;
-      const cleanText = typeof text === "string" ? text.replace(/\s/g, "") : "";
-      if (cleanText.length > 0 && cleanText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(cleanText)) {
-        try {
-          const bytes = new Uint8Array(atob(cleanText).split("").map((c) => c.charCodeAt(0)));
-          预处理订阅明文内容 = new TextDecoder("utf-8").decode(bytes);
-        } catch {
-        }
-      }
-      if (预处理订阅明文内容.split("#")[0].includes("://")) {
-        if (API备注名) {
-          const 处理后LINK内容 = 预处理订阅明文内容.replace(/([a-z][a-z0-9+\-.]*:\/\/[^\r\n]*?)(\r?\n|$)/gi, (match, link, lineEnd) => {
-            const 完整链接 = link.includes("#") ? `${link}${encodeURIComponent(` [${API备注名}]`)}` : `${link}${encodeURIComponent(`#[${API备注名}]`)}`;
-            return `${完整链接}${lineEnd}`;
-          });
-          订阅链接响应的明文LINK内容 += 处理后LINK内容 + "\n";
-        } else {
-          订阅链接响应的明文LINK内容 += 预处理订阅明文内容 + "\n";
-        }
-        return;
-      }
-      const lines = text.trim().split("\n").map((l) => l.trim()).filter((l) => l);
-      const isCSV = lines.length > 1 && lines[0].includes(",");
-      const IPV6_PATTERN = /^[^\[\]]*:[^\[\]]*:[^\[\]]/;
-      const parsedUrl = new URL(urlWithoutHash);
-      if (!isCSV) {
-        lines.forEach((line) => {
-          const lineHashIndex = line.indexOf("#");
-          const [hostPart, remark] = lineHashIndex > -1 ? [line.substring(0, lineHashIndex), line.substring(lineHashIndex)] : [line, ""];
-          let hasPort = false;
-          if (hostPart.startsWith("[")) {
-            hasPort = /\]:(\d+)$/.test(hostPart);
-          } else {
-            const colonIndex = hostPart.lastIndexOf(":");
-            hasPort = colonIndex > -1 && /^\d+$/.test(hostPart.substring(colonIndex + 1));
-          }
-          const port = parsedUrl.searchParams.get("port") || 默认端口;
-          const ipItem = hasPort ? line : `${hostPart}:${port}${remark}`;
-          if (API备注名) {
-            const 处理后IP = ipItem.includes("#") ? `${ipItem} [${API备注名}]` : `${ipItem}#[${API备注名}]`;
-            results.add(处理后IP);
-          } else {
-            results.add(ipItem);
-          }
-          if (优选IP作为反代IP) 反代IP池.add(ipItem.split("#")[0]);
-        });
-      } else {
-        const headers = lines[0].split(",").map((h) => h.trim());
-        const dataLines = lines.slice(1);
-        if (headers.includes("IP地址") && headers.includes("端口") && headers.includes("数据中心")) {
-          const ipIdx = headers.indexOf("IP地址"), portIdx = headers.indexOf("端口");
-          const remarkIdx = headers.indexOf("国家") > -1 ? headers.indexOf("国家") : headers.indexOf("城市") > -1 ? headers.indexOf("城市") : headers.indexOf("数据中心");
-          const tlsIdx = headers.indexOf("TLS");
-          dataLines.forEach((line) => {
-            const cols = line.split(",").map((c) => c.trim());
-            if (tlsIdx !== -1 && cols[tlsIdx]?.toLowerCase() !== "true") return;
-            const wrappedIP = IPV6_PATTERN.test(cols[ipIdx]) ? `[${cols[ipIdx]}]` : cols[ipIdx];
-            const ipItem = `${wrappedIP}:${cols[portIdx]}#${cols[remarkIdx]}`;
-            if (API备注名) {
-              const 处理后IP = `${ipItem} [${API备注名}]`;
-              results.add(处理后IP);
-            } else {
-              results.add(ipItem);
-            }
-            if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${cols[portIdx]}`);
-          });
-        } else if (headers.some((h) => h.includes("IP")) && headers.some((h) => h.includes("延迟")) && headers.some((h) => h.includes("下载速度"))) {
-          const ipIdx = headers.findIndex((h) => h.includes("IP"));
-          const delayIdx = headers.findIndex((h) => h.includes("延迟"));
-          const speedIdx = headers.findIndex((h) => h.includes("下载速度"));
-          const port = parsedUrl.searchParams.get("port") || 默认端口;
-          dataLines.forEach((line) => {
-            const cols = line.split(",").map((c) => c.trim());
-            const wrappedIP = IPV6_PATTERN.test(cols[ipIdx]) ? `[${cols[ipIdx]}]` : cols[ipIdx];
-            const ipItem = `${wrappedIP}:${port}#CF优选 ${cols[delayIdx]}ms ${cols[speedIdx]}MB/s`;
-            if (API备注名) {
-              const 处理后IP = `${ipItem} [${API备注名}]`;
-              results.add(处理后IP);
-            } else {
-              results.add(ipItem);
-            }
-            if (优选IP作为反代IP) 反代IP池.add(`${wrappedIP}:${port}`);
-          });
-        }
-      }
-    } catch (e) {
     }
-  }));
-  const LINK数组 = 订阅链接响应的明文LINK内容.trim() ? [...new Set(订阅链接响应的明文LINK内容.split(/\r?\n/).filter((line) => line.trim() !== ""))] : [];
-  return [Array.from(results), LINK数组, 需要订阅转换订阅URLs, Array.from(反代IP池)];
+  }
+  await Promise.all(Array.from({ length: Math.min(4, urls.length) }, () => worker()));
+  return [[...new Set(outputs.flatMap((s) => s.ips))], [...new Set(outputs.flatMap((s) => s.links))], [], [...new Set(outputs.flatMap((s) => s.pool))], outputs.map((s) => s.status)];
 }
 
 // src/subscribe/format-clash.js
@@ -7852,6 +8082,52 @@ function 生成Clash订阅(links, config) {
       "MATCH,🚀 节点选择"
     ]
   }, null, 2);
+}
+
+// src/subscribe/batch-links.js
+function 生成批量节点链接(候选列表, 配置, 用户ID, host, 原始选项, 来源, 反代IP池 = []) {
+  const 公共选项 = 校验链接预览选项(原始选项, 配置, host);
+  const 节点 = [], 已见 = /* @__PURE__ */ new Set();
+  let 跳过 = 0, 重复 = 0, 超限 = 0;
+  const 待处理 = 候选列表.slice(0, 500);
+  超限 = Math.max(0, 候选列表.length - 待处理.length);
+  for (const 原始行 of 待处理) {
+    const 行 = String(原始行).trim();
+    if (!行) continue;
+    if (节点.length >= 100) {
+      超限++;
+      continue;
+    }
+    if (行.includes("://") || /\$|\bsub\s*=|\bproxyip\s*=|\*/i.test(行)) {
+      跳过++;
+      continue;
+    }
+    const 分隔 = 行.indexOf("#");
+    const 地址端口 = (分隔 < 0 ? 行 : 行.slice(0, 分隔)).trim();
+    const 备注 = 分隔 < 0 ? 公共选项.备注 : 行.slice(分隔 + 1).trim();
+    const 匹配 = 地址端口.match(/^(\[[0-9a-fA-F:]+\]|[^:\s#]+)(?::(\d+))?$/);
+    if (!匹配) {
+      跳过++;
+      continue;
+    }
+    if (反代IP池.some((p) => p.includes(匹配[1]))) {
+      跳过++;
+      continue;
+    }
+    try {
+      const 选项 = 校验链接预览选项({ ...公共选项, 地址: 匹配[1], 端口: 匹配[2] ?? 公共选项.端口, 备注 }, 配置, host);
+      const 键 = 选项.地址.toLowerCase() + ":" + 选项.端口;
+      if (已见.has(键)) {
+        重复++;
+        continue;
+      }
+      已见.add(键);
+      节点.push({ 地址: 选项.地址, 端口: 选项.端口, 备注: 选项.备注, 来源, 链接: 生成主节点链接(配置, 用户ID, host, 选项) });
+    } catch (_) {
+      跳过++;
+    }
+  }
+  return { 来源, 节点, 跳过, 重复, 超限 };
 }
 
 // src/subscribe/format-quanx.js
@@ -8201,10 +8477,19 @@ function 订阅转换器目标(订阅类型) {
   if (订阅类型 === "quantumultx") return "quanx";
   return 订阅类型;
 }
-async function 获取订阅节点列表(config_JSON, url, request, env) {
+async function 获取订阅节点列表(config_JSON, url, request, env, 最大外部源数 = 8) {
   let 完整优选IP = [], 其他节点LINK = "", 反代IP池 = [];
+  let 未请求优选API数量 = 0;
+  const 来源诊断 = [];
   if (!url.searchParams.has("sub") && config_JSON.优选订阅生成.local) {
-    const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口))[0] : await env.KV.get("ADD.txt") ? await 整理成数组(await env.KV.get("ADD.txt")) : (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口))[0];
+    const 保存的地址 = config_JSON.优选订阅生成.本地IP库.随机IP ? null : await env.KV.get("ADD.txt");
+    let 完整优选列表;
+    if (保存的地址) 完整优选列表 = await 整理成数组(保存的地址);
+    else {
+      const 随机结果 = await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口);
+      完整优选列表 = 随机结果[0];
+      来源诊断.push(随机结果[2]);
+    }
     const 优选API = [], 优选IP = [], 其他节点 = [];
     for (const 元素 of 完整优选列表) {
       if (元素.toLowerCase().startsWith("sub://")) {
@@ -8232,7 +8517,10 @@ async function 获取订阅节点列表(config_JSON, url, request, env) {
         }
       }
     }
-    const 请求优选API内容 = await 请求优选API(优选API, "443");
+    未请求优选API数量 = Math.max(0, 优选API.length - 最大外部源数);
+    const 请求优选API内容 = await 请求优选API(优选API.slice(0, 最大外部源数), "443");
+    来源诊断.push(...请求优选API内容[4]);
+    if (未请求优选API数量) 来源诊断.push(优选来源结果("其余优选源", "limited", 未请求优选API数量));
     const 合并其他节点数组 = [...new Set(其他节点.concat(请求优选API内容[1]))];
     其他节点LINK = 合并其他节点数组.length > 0 ? 合并其他节点数组.join("\n") + "\n" : "";
     const 优选API的IP = 请求优选API内容[0];
@@ -8240,14 +8528,14 @@ async function 获取订阅节点列表(config_JSON, url, request, env) {
     完整优选IP = [...new Set(优选IP.concat(优选API的IP))];
   } else {
     let 优选订阅生成器HOST = url.searchParams.get("sub") || config_JSON.优选订阅生成.SUB;
-    const [优选生成器IP数组, 优选生成器其他节点] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
+    const [优选生成器IP数组, 优选生成器其他节点, 状态] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
+    来源诊断.push(状态);
     完整优选IP = 完整优选IP.concat(优选生成器IP数组);
     其他节点LINK += 优选生成器其他节点;
   }
-  return { 完整优选IP, 其他节点LINK, 反代IP池 };
+  return { 完整优选IP, 其他节点LINK, 反代IP池, 未请求优选API数量, 来源诊断 };
 }
 function 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数) {
-  const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
   return 其他节点LINK + 完整优选IP.map((原始地址) => {
     const regex = /^(\[[\da-fA-F:]+\]|[\d.]+|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)(?::(\d+))?(?:#(.+))?$/;
     const match = 原始地址.match(regex);
@@ -8276,19 +8564,13 @@ function 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池,
       if (匹配到的反代IP) 完整节点路径 = `${config_JSON.PATH}/proxyip=${匹配到的反代IP}`.replace(/\/\//g, "/") + (config_JSON.启用0RTT ? "?ed=2560" : "");
     }
     if (isLoonOrSurge) 完整节点路径 = 完整节点路径.replace(/,/g, "%2C");
-    if (协议类型 === "ss" && !作为优选订阅生成器) {
-      if (!config_JSON.SS.TLS) {
-        const TLS端口 = [443, 2053, 2083, 2087, 2096, 8443];
-        const NOTLS端口 = [80, 2052, 2082, 2086, 2095, 8080];
-        节点端口 = String(NOTLS端口[TLS端口.indexOf(Number(节点端口))] ?? 节点端口);
-      }
-      完整节点路径 = (完整节点路径.includes("?") ? 完整节点路径.replace("?", "?enc=" + config_JSON.SS.加密方式 + "&") : 完整节点路径 + "?enc=" + config_JSON.SS.加密方式).replace(/([=,])/g, "\\$1");
-      if (!isSubConverterRequest) 完整节点路径 = 完整节点路径 + ";mux=0";
-      return `${协议类型}://${btoa(config_JSON.SS.加密方式 + ":00000000-0000-4000-8000-000000000000")}@${节点地址}:${节点端口}?plugin=v2${encodeURIComponent("ray-plugin;mode=websocket;host=example.com;path=" + (config_JSON.随机路径 ? 随机路径(完整节点路径) : 完整节点路径) + (config_JSON.SS.TLS ? ";tls" : "")) + ECHLINK参数 + TLS分片参数}#${encodeURIComponent(节点备注)}`;
-    } else {
-      const 传输路径参数值 = 获取传输路径参数值(config_JSON, 完整节点路径, 作为优选订阅生成器);
-      return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=example.com&fp=${config_JSON.Fingerprint}&sni=example.com&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none${config_JSON.ALPN ? "&alpn=" + encodeURIComponent(config_JSON.ALPN) : ""}#${encodeURIComponent(节点备注)}`;
-    }
+    return 序列化节点链接(创建节点模型(config_JSON, "00000000-0000-4000-8000-000000000000", "example.com", {
+      协议类型,
+      地址: 节点地址,
+      端口: 节点端口,
+      路径: 完整节点路径,
+      备注: 节点备注
+    }, { 订阅: true, 订阅生成器: 作为优选订阅生成器, 转换器请求: isSubConverterRequest, ECH参数: ECHLINK参数, TLS分片参数 }));
   }).filter((item) => item !== null).join("\n");
 }
 
@@ -8301,7 +8583,7 @@ var main_default = {
         return await 处理请求(request, env, ctx, 配置);
       } catch (error) {
         console.error(JSON.stringify({ event: "request_error", name: error.name }));
-        return new Response("请求处理失败", { status: error.status || 500, headers: { "Cache-Control": "no-store" } });
+        return new Response(error.code === "PREFERRED_UNAVAILABLE" ? "优选来源未返回可用节点，请在管理面板查看来源诊断" : "请求处理失败", { status: error.status || 500, headers: { "Cache-Control": "no-store" } });
       }
     });
   }
@@ -8425,13 +8707,21 @@ async function 处理请求(request, env, ctx, 配置) {
             const 待验证优选URL = url.searchParams.get("url");
             try {
               new URL(待验证优选URL);
+              const 端口 = Number(url.searchParams.get("port") || "443");
+              if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) return Response.json({ success: false, msg: "端口必须在 1–65535 之间" }, { status: 400 });
               const 请求优选API内容 = await 请求优选API([待验证优选URL], url.searchParams.get("port") || "443");
               let 优选API的IP = 请求优选API内容[0].length > 0 ? 请求优选API内容[0] : 请求优选API内容[1];
-              优选API的IP = 优选API的IP.map((item) => item.replace(/#(.+)$/, (_, remark) => "#" + decodeURIComponent(remark)));
-              return new Response(JSON.stringify({ success: true, data: 优选API的IP }, null, 2), { status: 200, headers: { "Content-Type": "application/json;charset=utf-8" } });
+              优选API的IP = 优选API的IP.map((item) => item.replace(/#(.+)$/, (_, remark) => {
+                try {
+                  return "#" + decodeURIComponent(remark);
+                } catch (_2) {
+                  return "#" + remark;
+                }
+              }));
+              const sources = 请求优选API内容[4];
+              return Response.json({ success: 优选API的IP.length > 0, data: 优选API的IP, sources, msg: sources.map((s) => s.message).join("；") }, { headers: { "Cache-Control": "no-store" } });
             } catch (err) {
-              const errorResponse = { msg: "验证优选API失败，失败原因：" + err.message, error: err.message };
-              return new Response(JSON.stringify(errorResponse, null, 2), { status: err.status || 500, headers: { "Content-Type": "application/json;charset=utf-8" } });
+              return Response.json({ success: false, msg: "优选来源地址无效或无法处理" }, { status: 400, headers: { "Cache-Control": "no-store" } });
             }
           }
           return new Response(JSON.stringify({ success: false, data: [] }, null, 2), { status: 403, headers: { "Content-Type": "application/json;charset=utf-8" } });
@@ -8471,6 +8761,36 @@ async function 处理请求(request, env, ctx, 配置) {
           return Response.json({ success: true, message: "已提交上一版本，跨区域传播需要时间" });
         }
         config_JSON = await 读取config_JSON(env, host, userID, UA);
+        if (访问路径 === "admin/api/link-preview") {
+          if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+          try {
+            const 选项 = 校验链接预览选项(await 读取管理JSON(request), config_JSON, host);
+            return Response.json({ link: 生成主节点链接(config_JSON, userID, host, 选项) }, { headers: { "Cache-Control": "no-store" } });
+          } catch (error) {
+            return Response.json({ error: error.message }, { status: error.status || 400, headers: { "Cache-Control": "no-store" } });
+          }
+        }
+        if (访问路径 === "admin/api/link-batch") {
+          if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+          try {
+            const body = await 读取管理JSON(request);
+            if (!["add", "preferred"].includes(body?.source)) return Response.json({ error: "仅支持 ADD.txt 或当前优选结果" }, { status: 400 });
+            const 选项 = 校验链接预览选项({ ...body, 地址: host }, config_JSON, host);
+            let 候选, 反代IP池 = [], 未请求优选API数量 = 0, 来源诊断 = [];
+            if (body.source === "add") 候选 = await 整理成数组(await env.KV.get("ADD.txt") || "");
+            else {
+              const 结果 = await 获取订阅节点列表(config_JSON, new URL("/sub", request.url), request, env, 8);
+              const { 完整优选IP, 其他节点LINK } = 结果;
+              候选 = 完整优选IP.concat(其他节点LINK.split(/\r?\n/).filter(Boolean));
+              未请求优选API数量 = 结果.未请求优选API数量;
+              反代IP池 = 结果.反代IP池;
+              来源诊断 = 结果.来源诊断;
+            }
+            return Response.json({ ...生成批量节点链接(候选, config_JSON, userID, host, 选项, body.source, 反代IP池), 未请求优选API数量, 来源诊断 }, { headers: { "Cache-Control": "no-store" } });
+          } catch (error) {
+            return Response.json({ error: error.message }, { status: error.status || 400, headers: { "Cache-Control": "no-store" } });
+          }
+        }
         if (访问路径 === "admin/init") {
           if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
           try {
@@ -8629,6 +8949,15 @@ async function 处理请求(request, env, ctx, 配置) {
         const 订阅转换后端请求订阅 = 请求TOKEN === 今日订阅转换后端专属TOKEN || 请求TOKEN === 昨日订阅转换后端专属TOKEN;
         if (用户客户端请求订阅 || 订阅转换后端请求订阅 || 作为优选订阅生成器) {
           config_JSON = await 读取config_JSON(env, host, userID, UA);
+          let 本次节点Promise;
+          const 加载订阅节点 = () => {
+            if (!本次节点Promise) 本次节点Promise = 获取订阅节点列表(config_JSON, url, request, env).then((结果) => {
+              if (!结果.完整优选IP.length && !结果.其他节点LINK.trim()) throw Object.assign(new Error("优选来源未返回可用节点"), { status: 502, code: "PREFERRED_UNAVAILABLE" });
+              responseHeaders["X-Preferred-Sources-Skipped"] = String(结果.未请求优选API数量);
+              return 结果;
+            });
+            return 本次节点Promise;
+          };
           if (作为优选订阅生成器) ctx.waitUntil(请求日志记录(env, request, 访问IP, "Get_Best_SUB", config_JSON, false));
           else ctx.waitUntil(请求日志记录(env, request, 访问IP, "Get_SUB", config_JSON));
           const ua = UA.toLowerCase();
@@ -8649,30 +8978,29 @@ async function 处理请求(request, env, ctx, 配置) {
           if (!ua.includes("mozilla")) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
           const 协议类型 = (url.searchParams.has("surge") || ua.includes("surge")) && config_JSON.协议类型 !== "ss" ? "trojan" : config_JSON.协议类型;
           if (url.searchParams.get("native") === "1") {
-            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
             const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, "", "");
             return new Response(生成原生订阅(订阅类型, links, config_JSON), { headers: { ...responseHeaders, "content-type": "application/json; charset=utf-8" } });
           }
           if (订阅类型 === "clash" && !url.searchParams.has("converter")) {
             try {
-              const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+              const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
               const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, "", "");
               return new Response(生成Clash订阅(links, config_JSON), { headers: { ...responseHeaders, "content-type": "application/x-yaml; charset=utf-8" } });
             } catch (error) {
+              if (error.code === "PREFERRED_UNAVAILABLE") throw error;
               log(`[订阅] Clash 本地直出不可用，回落转换器: ${error && error.message ? error.message : error}`);
             }
           }
           let 订阅内容 = "";
           if (订阅类型 === "mixed") {
-            const TLS分片参数 = config_JSON.TLS分片 == "Shadowrocket" ? `&fragment=${encodeURIComponent("1,40-60,30-50,tlshello")}` : config_JSON.TLS分片 == "Happ" ? `&fragment=${encodeURIComponent("3,1,tlshello")}` : "";
-            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
-            const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + "+" : "") + config_JSON.ECHConfig.DNS)}` : "";
+            const { ECH参数: ECHLINK参数, TLS分片参数 } = 获取链接附加参数(config_JSON);
+            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
             const isLoonOrSurge = ua.includes("loon") || ua.includes("surge");
             订阅内容 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
           } else if (订阅类型 === "shadowrocket" || 订阅类型 === "v2rayn") {
-            const TLS分片参数 = config_JSON.TLS分片 == "Shadowrocket" ? `&fragment=${encodeURIComponent("1,40-60,30-50,tlshello")}` : config_JSON.TLS分片 == "Happ" ? `&fragment=${encodeURIComponent("3,1,tlshello")}` : "";
-            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
-            const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + "+" : "") + config_JSON.ECHConfig.DNS)}` : "";
+            const { ECH参数: ECHLINK参数, TLS分片参数 } = 获取链接附加参数(config_JSON);
+            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
             const 链接文本 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, false, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
             订阅内容 = 订阅类型 === "shadowrocket" ? 生成Shadowrocket订阅(链接文本, config_JSON.完整节点路径, config_JSON) : 生成V2rayN订阅(链接文本, config_JSON.完整节点路径, config_JSON);
           } else {

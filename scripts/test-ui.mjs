@@ -1,4 +1,5 @@
 import { 管理面板HTML } from '../src/admin/ui/index.js';
+import { 二维码运行时 } from '../src/admin/qr.js';
 import { 登录页面 } from '../src/admin/pages.js';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -17,11 +18,28 @@ import assert from 'node:assert/strict';
 
   // 1) 四个 Tab + 首屏数据注入 + QR 运行时 + 客户端脚本
   const html = 管理面板HTML({}, 正常配置);
+  const 长链接 = 'vless://' + 'a'.repeat(260) + '@node.example:443?type=ws#test';
+  const 浏览器窗口 = {};
+  new Function('window', 二维码运行时)(浏览器窗口);
+  assert.equal(typeof 浏览器窗口.NodeDiagnostics.inspect, 'function', '诊断器必须随面板打包到浏览器');
+  const 二维码 = 浏览器窗口.QRCode.generateSVG(长链接);
+  assert.ok(二维码.startsWith('<svg') && 二维码.includes('<rect') && !二维码.includes(长链接), '长链接应生成不泄露文本的 SVG 二维码');
+  assert.throws(() => 浏览器窗口.QRCode.generateSVG('x'.repeat(2049)), /二维码内容长度/, '过长内容应有明确错误');
   for (const 需包含 of ['data-tab="overview"', 'data-tab="nodes"', 'data-tab="config"', 'data-tab="ops"', '__ET__', 'window.QRCode', 'usage-history']) {
     assert.ok(html.includes(需包含), `HTML 应包含 ${需包含}`);
   }
   // 2) 订阅链接与节点链接出现在页面（server-render 或 __ET__ 数据中）
   assert.ok(html.includes('tok123') && html.includes('edt2.example.org'), '注入的 token 与 host 出现');
+  for (const 标记 of ['id="n-link-protocol"', 'id="n-link-transport"', 'id="n-link-address"', 'id="n-link-port"', 'id="n-link-path"', 'id="n-link-remark"', 'id="btn-generate-link"', 'id="btn-copy-generated"', 'id="btn-qr-generated"', '/admin/api/link-preview']) {
+    assert.ok(html.includes(标记), `链接生成面板应包含 ${标记}`);
+  }
+  for (const 标记 of ['id="btn-batch-add"', 'id="btn-batch-preferred"', 'id="btn-batch-copy"', 'id="btn-batch-download"', 'id="n-batch-status"', 'id="n-batch-list"', '/admin/api/link-batch']) {
+    assert.ok(html.includes(标记), `批量链接面板应包含 ${标记}`);
+  }
+  for (const 标记 of ['id="n-link-form"', 'id="n-form-error"', 'id="n-preview-status"', 'id="n-inspect-form"', 'id="n-inspect-input"', 'id="n-inspect-result"', 'id="n-batch-search"', 'id="btn-batch-more"']) {
+    assert.ok(html.includes(标记), `节点工作区应包含 ${标记}`);
+  }
+  assert.ok(html.includes('id="n-source-panel"') && html.includes('id="n-batch-sources"'), '优选来源状态需有独立展示区域');
 
   // 1.1) 动效降级标记（CSS 层；glassmorphism 标记已由 P1 深蓝令牌取代）
   for (const 标记 of ['prefers-reduced-motion']) {

@@ -9,9 +9,10 @@ import { 读取用量历史, 写入用量快照 } from './services/usage-history
 import { 执行自检 } from './services/self-check.js';
 import { Version, 特征码字典 } from './core/constants.js';
 import { log, 请求存储 } from './core/context.js';
+import { 生成主节点链接, 校验链接预览选项, 获取链接附加参数 } from './core/link.js';
 import { base64SecretEncode, 是拦截UA } from './core/options.js';
 import { 替换星号为随机字符, 获取叉HTTPPadding标识 } from './core/paths.js';
-import { 识别运营商 } from './core/strings.js';
+import { 整理成数组, 识别运营商 } from './core/strings.js';
 import { 处理gRPC请求 } from './protocol/grpc.js';
 import { 处理WS请求 } from './protocol/ws.js';
 import { 处理叉HTTP请求 } from './protocol/xhttp.js';
@@ -23,6 +24,7 @@ import { getCloudflareUsage } from './services/usage.js';
 import { Clash订阅配置文件热补丁 } from './subscribe/format-clash.js';
 import { Loon订阅配置文件热补丁 } from './subscribe/format-loon.js';
 import { 生成Clash订阅, 生成原生订阅 } from './subscribe/format-native.js';
+import { 生成批量节点链接 } from './subscribe/batch-links.js';
 import { QuantumultX订阅配置文件热补丁 } from './subscribe/format-quanx.js';
 import { 生成Shadowrocket订阅 } from './subscribe/format-shadowrocket.js';
 import { Singbox订阅配置文件热补丁 } from './subscribe/format-singbox.js';
@@ -57,7 +59,7 @@ export default {
    try { return await 处理请求(request, env, ctx, 配置); }
    catch (error) {
     console.error(JSON.stringify({ event: 'request_error', name: error.name }));
-    return new Response('请求处理失败', { status: error.status || 500, headers: { 'Cache-Control': 'no-store' } });
+    return new Response(error.code === 'PREFERRED_UNAVAILABLE' ? '优选来源未返回可用节点，请在管理面板查看来源诊断' : '请求处理失败', { status: error.status || 500, headers: { 'Cache-Control': 'no-store' } });
    }
   });
  }
@@ -187,13 +189,15 @@ async function 处理请求(request, env, ctx, 配置) {
 							const 待验证优选URL = url.searchParams.get('url');
 							try {
 								new URL(待验证优选URL);
+								const 端口 = Number(url.searchParams.get('port') || '443');
+								if (!Number.isInteger(端口) || 端口 < 1 || 端口 > 65535) return Response.json({ success: false, msg: '端口必须在 1–65535 之间' }, { status: 400 });
 								const 请求优选API内容 = await 请求优选API([待验证优选URL], url.searchParams.get('port') || '443');
 								let 优选API的IP = 请求优选API内容[0].length > 0 ? 请求优选API内容[0] : 请求优选API内容[1];
-								优选API的IP = 优选API的IP.map(item => item.replace(/#(.+)$/, (_, remark) => '#' + decodeURIComponent(remark)));
-								return new Response(JSON.stringify({ success: true, data: 优选API的IP }, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								优选API的IP = 优选API的IP.map(item => item.replace(/#(.+)$/, (_, remark) => { try { return '#' + decodeURIComponent(remark); } catch (_) { return '#' + remark; } }));
+								const sources = 请求优选API内容[4];
+								return Response.json({ success: 优选API的IP.length > 0, data: 优选API的IP, sources, msg: sources.map(s => s.message).join('；') }, { headers: { 'Cache-Control': 'no-store' } });
 							} catch (err) {
-								const errorResponse = { msg: '验证优选API失败，失败原因：' + err.message, error: err.message };
-								return new Response(JSON.stringify(errorResponse, null, 2), { status: err.status || 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								return Response.json({ success: false, msg: '优选来源地址无效或无法处理' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
 							}
 						}
 						return new Response(JSON.stringify({ success: false, data: [] }, null, 2), { status: 403, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -236,7 +240,36 @@ async function 处理请求(request, env, ctx, 配置) {
                         return Response.json({ success:true, message:'已提交上一版本，跨区域传播需要时间' });
                     }
 					config_JSON = await 读取config_JSON(env, host, userID, UA);
-
+					if (访问路径 === 'admin/api/link-preview') {
+						if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
+						try {
+							const 选项 = 校验链接预览选项(await 读取管理JSON(request), config_JSON, host);
+							return Response.json({ link: 生成主节点链接(config_JSON, userID, host, 选项) }, { headers: { 'Cache-Control': 'no-store' } });
+						} catch (error) {
+							return Response.json({ error: error.message }, { status: error.status || 400, headers: { 'Cache-Control': 'no-store' } });
+						}
+					}
+					if (访问路径 === 'admin/api/link-batch') {
+						if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
+						try {
+							const body = await 读取管理JSON(request);
+							if (!['add', 'preferred'].includes(body?.source)) return Response.json({ error: '仅支持 ADD.txt 或当前优选结果' }, { status: 400 });
+							const 选项 = 校验链接预览选项({ ...body, 地址: host }, config_JSON, host);
+							let 候选, 反代IP池 = [], 未请求优选API数量 = 0, 来源诊断 = [];
+							if (body.source === 'add') 候选 = await 整理成数组(await env.KV.get('ADD.txt') || '');
+							else {
+								const 结果 = await 获取订阅节点列表(config_JSON, new URL('/sub', request.url), request, env, 8);
+								const { 完整优选IP, 其他节点LINK } = 结果;
+								候选 = 完整优选IP.concat(其他节点LINK.split(/\r?\n/).filter(Boolean));
+								未请求优选API数量 = 结果.未请求优选API数量;
+								反代IP池 = 结果.反代IP池;
+								来源诊断 = 结果.来源诊断;
+							}
+								return Response.json({ ...生成批量节点链接(候选, config_JSON, userID, host, 选项, body.source, 反代IP池), 未请求优选API数量, 来源诊断 }, { headers: { 'Cache-Control': 'no-store' } });
+						} catch (error) {
+							return Response.json({ error: error.message }, { status: error.status || 400, headers: { 'Cache-Control': 'no-store' } });
+						}
+					}
 					if (访问路径 === 'admin/init') {// 重置配置为默认值
                         if (request.method !== 'POST') return new Response('Method Not Allowed', { status:405, headers:{ Allow:'POST' } });
 						try {
@@ -400,6 +433,15 @@ async function 处理请求(request, env, ctx, 配置) {
 					const 订阅转换后端请求订阅 = 请求TOKEN === 今日订阅转换后端专属TOKEN || 请求TOKEN === 昨日订阅转换后端专属TOKEN;
 					if (用户客户端请求订阅 || 订阅转换后端请求订阅 || 作为优选订阅生成器) {
 						config_JSON = await 读取config_JSON(env, host, userID, UA);
+                        let 本次节点Promise;
+                        const 加载订阅节点 = () => {
+                            if (!本次节点Promise) 本次节点Promise = 获取订阅节点列表(config_JSON, url, request, env).then(结果 => {
+                                if (!结果.完整优选IP.length && !结果.其他节点LINK.trim()) throw Object.assign(new Error('优选来源未返回可用节点'), { status: 502, code: 'PREFERRED_UNAVAILABLE' });
+                                responseHeaders["X-Preferred-Sources-Skipped"] = String(结果.未请求优选API数量);
+                                return 结果;
+                            });
+                            return 本次节点Promise;
+                        };
 						if (作为优选订阅生成器) ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Get_Best_SUB', config_JSON, false));
 						else ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Get_SUB', config_JSON));
 						const ua = UA.toLowerCase();
@@ -425,7 +467,7 @@ async function 处理请求(request, env, ctx, 配置) {
 						if (!ua.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
 						const 协议类型 = ((url.searchParams.has('surge') || ua.includes('surge')) && config_JSON.协议类型 !== 'ss') ? 'tro' + 'jan' : config_JSON.协议类型;
                         if (url.searchParams.get('native') === '1') {
-                            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+                            const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
                             const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, '', '');
                             return new Response(生成原生订阅(订阅类型, links, config_JSON), { headers:{ ...responseHeaders, 'content-type':'application/json; charset=utf-8' } });
                         }
@@ -434,24 +476,23 @@ async function 处理请求(request, env, ctx, 配置) {
 						// 需要 ACL4SSR 全量规则时加 &converter=1；本地不支持的配置（ECH/TLS 分片）同样回落转换器。
 						if (订阅类型 === 'clash' && !url.searchParams.has('converter')) {
 							try {
-								const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
+								const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
 								const links = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, false, false, false, userID, '', '');
 								return new Response(生成Clash订阅(links, config_JSON), { headers: { ...responseHeaders, 'content-type': 'application/x-yaml; charset=utf-8' } });
 							} catch (error) {
+								if (error.code === 'PREFERRED_UNAVAILABLE') throw error;
 								log(`[订阅] Clash 本地直出不可用，回落转换器: ${error && error.message ? error.message : error}`);
 							}
 						}
 						let 订阅内容 = '';
 						if (订阅类型 === 'mixed') {
-							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
-							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
-							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
+							const { ECH参数: ECHLINK参数, TLS分片参数 } = 获取链接附加参数(config_JSON);
+							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
 							const isLoonOrSurge = ua.includes('loon') || ua.includes('surge');
 							订阅内容 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
 						} else if (订阅类型 === 'shadowrocket' || 订阅类型 === 'v2rayn') { // 直出明文订阅（零转换器依赖，复用节点链接生成器）
-							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
-							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 获取订阅节点列表(config_JSON, url, request, env);
-							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
+							const { ECH参数: ECHLINK参数, TLS分片参数 } = 获取链接附加参数(config_JSON);
+							const { 完整优选IP, 其他节点LINK, 反代IP池 } = await 加载订阅节点();
 							const 链接文本 = 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, false, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数);
 							订阅内容 = 订阅类型 === 'shadowrocket'
 								? 生成Shadowrocket订阅(链接文本, config_JSON.完整节点路径, config_JSON)

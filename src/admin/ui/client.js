@@ -7,6 +7,23 @@ const 客户端脚本 = `
 (function () {
   var S = window.__ET__;
   function $(s) { return document.querySelector(s); }
+  var 编辑分组 = {
+    '#cfg': '#cfg,[id^="c-"],#btn-save-ess,#btn-save-json,#btn-cfg-import',
+    '#o-add': '#o-add,#btn-save-add,#btn-api-to-add,#btn-o-test-add',
+    '#o-lib-random': '#o-lib-random,#o-lib-count,#o-lib-port,#btn-save-lib'
+  };
+  function 设置编辑状态(key, state) {
+    $(key).dataset.loadState = state;
+    document.querySelectorAll(编辑分组[key]).forEach(function (el) { el.disabled = state !== 'ready'; });
+  }
+  function 编辑可用(key) {
+    if ($(key).dataset.loadState === 'ready') return true;
+    toast('内容尚未加载成功，请等待或重试后再编辑保存', false); return false;
+  }
+  function 编辑命令(tab, key, button) {
+    点('[data-tab="' + tab + '"]');
+    if (编辑可用(key)) 点(button);
+  }
 
   // —— Toast 队列：同时只显示一条，其余排队 ——
   var 提示队列 = [], 提示忙 = false;
@@ -122,17 +139,17 @@ const 客户端脚本 = `
     { 名: '复制 Clash 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-clash'); } },
     { 名: '复制 sing-box 原生订阅', 组: '节点', 跑: function () { 点('#btn-copy-singbox'); } },
     { 名: '打开二维码', 组: '节点', 跑: function () { 点('#btn-open-qr'); } },
-    { 名: '下载二维码 PNG', 组: '节点', 跑: function () { 点('#btn-open-qr'); setTimeout(function () { 点('#btn-qr-download'); }, 120); } },
+    { 名: '下载二维码 PNG', 组: '节点', 跑: function () { 显示二维码(S.link || '').then(function (ok) { if (ok) 点('#btn-qr-download'); }); } },
     { 名: '刷新用量', 组: '概览', 跑: function () { 点('#btn-refresh-usage'); } },
-    { 名: '刷新全部', 组: '概览', 跑: function () { 点('#btn-refresh-top'); } },
+    { 名: '立即查询用量', 组: '概览', 跑: function () { 点('#btn-refresh-top'); } },
     { 名: '配置：重新加载', 组: '配置', 跑: function () { 点('#btn-load-json'); } },
-    { 名: '配置：保存到 KV', 组: '配置', 跑: function () { 点('[data-tab="config"]'); setTimeout(function () { 点('#btn-save-json'); }, 120); } },
+    { 名: '配置：保存到 KV', 组: '配置', 跑: function () { 编辑命令('config', '#cfg', '#btn-save-json'); } },
     { 名: '配置：导出到剪贴板', 组: '配置', 跑: function () { 点('#btn-cfg-export'); } },
     { 名: '配置：从剪贴板导入', 组: '配置', 跑: function () { 点('#btn-cfg-import'); } },
     { 名: '配置：恢复上一版本', 组: '配置', 跑: function () { 点('#btn-restore'); } },
     { 名: '运维：保存 TG', 组: '运维', 跑: function () { 点('#btn-save-tg'); } },
     { 名: '运维：保存 CF 凭据', 组: '运维', 跑: function () { 点('#btn-save-cf'); } },
-    { 名: '运维：保存优选 IP', 组: '运维', 跑: function () { 点('#btn-save-add'); } },
+    { 名: '运维：保存优选 IP', 组: '运维', 跑: function () { 编辑命令('ops', '#o-add', '#btn-save-add'); } },
     { 名: '运维：复制诊断 JSON', 组: '运维', 跑: function () { 点('#btn-diag-copy'); } },
     { 名: '运维：重置配置为默认值', 组: '运维', 跑: function () { 点('#btn-init'); } },
     { 名: '切换主题', 组: '外观', 跑: function () { 设置主题(); } },
@@ -334,6 +351,7 @@ const 客户端脚本 = `
   }
   var 待保存配置 = null;
   function 请求保存配置() {
+    if (!编辑可用('#cfg')) return;
     var r = 校验编辑器();
     if (!r.ok) { toast('配置有 ' + r.errs.length + ' 处问题，已阻止保存', false); return; }
     var d = 生成差异(已加载配置文本, $('#cfg').value);
@@ -377,22 +395,29 @@ const 客户端脚本 = `
 
   // Tab 切换
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
+  var 已访问页签 = {};
   function switchTab(btn) {
-    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
+    tabs.forEach(function (b) { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); b.tabIndex = b === btn ? 0 : -1; });
     Array.prototype.slice.call(document.querySelectorAll('.page')).forEach(function (p) { p.classList.toggle('on', p.dataset.page === btn.dataset.tab); });
     try { localStorage.setItem('et_admin_tab', btn.dataset.tab); } catch (e) {}
     if (btn.dataset.tab === 'overview') loadOverview();
-    if (btn.dataset.tab === 'config') loadConfig();
-    if (btn.dataset.tab === 'ops') { loadOps(); loadDiag(); }
+    if (btn.dataset.tab === 'config' && !已访问页签.config) loadConfig();
+    if (btn.dataset.tab === 'ops' && !已访问页签.ops) { loadOps(); loadDiag(); }
     if (btn.dataset.tab === 'nodes') loadNodes();
-    if (btn.dataset.tab === 'check' && !自检已跑) loadCheck(false);
+    已访问页签[btn.dataset.tab] = true;
   }
   tabs.forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn); }); });
-  (function () {
-    var saved = null;
-    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
-    if (saved) { var b = document.querySelector('[data-tab="' + saved + '"]'); if (b) switchTab(b); }
-  })();
+  tabs.forEach(function (btn, index) {
+    btn.addEventListener('keydown', function (e) {
+      var next;
+      if (e.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      else return;
+      e.preventDefault(); tabs[next].focus(); switchTab(tabs[next]);
+    });
+  });
 
   // 用量显示：区分「实时查询成功」「仅有历史快照」「无数据」三态，
   // 避免把"查不到"渲染成 "0 / 100,000 0.0%" 这种看似正常的假数据。
@@ -438,7 +463,7 @@ const 客户端脚本 = `
       渲染用量(use, rows);
       骨架完毕('#chart');
       var box = $('#chart'); if (!box) return;
-      if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（每次刷新用量后写入当日一条）</p>'; return; }
+      if (!rows.length) { box.innerHTML = '<p class="dim">暂无历史快照（用量变化时记录，最短间隔五分钟）</p>'; return; }
       // viewBox 宽度跟随容器实际像素宽：写死 640 会在宽屏上被等比放大成"柱子高得离谱"，
       // 且柱子被拉伸后 rx 与描边一起变形。按 1px≈1 用户单位渲染，高度固定在 150。
       var W = Math.max(320, Math.round(box.clientWidth || 640)), H = 150, pad = 26;
@@ -476,14 +501,22 @@ const 客户端脚本 = `
 
   // 节点与订阅
   function loadNodes() {
+    // S 是本次页面加载的配置快照；切换 Tab 时保留表单和对应生成结果。
+    var page = $('#page-nodes');
+    if (page.dataset.initialized === 'true') return;
     $('#nlink-code').textContent = S.link || '';
     $('#sub-link').textContent = 'https://' + S.host + '/sub?token=' + S.token;
-    var qr = $('#qr'), big = $('#qr-big');
+    $('#n-link-protocol').value = S.协议类型 || 'vless';
+    $('#n-link-transport').value = S.协议类型 === 'ss' ? 'ws' : S.传输协议 || 'ws';
+    $('#n-link-address').value = S.host || '';
+    $('#n-link-port').value = S.协议类型 === 'ss' && S.SS && !S.SS.TLS ? '80' : '443';
+    $('#n-link-remark').value = S.subname || '';
+    $('#n-link-path').value = S.path || '/';
+    var qr = $('#qr');
     try {
-      qr.innerHTML = window.QRCode.generateSVG(S.link || 'no-link');
-      qr.onclick = openQR; qr.style.cursor = 'pointer'; qr.title = '点击放大';
-      if (big) big.innerHTML = window.QRCode.generateSVG(S.link || 'no-link', 4);
-    } catch (e) { qr.innerHTML = '<p class="dim">二维码生成失败：' + e.message + '</p>'; }
+      qr.innerHTML = window.QRCode.generateSVG(S.link || '');
+      qr.onclick = function () { 显示二维码(S.link); }; qr.style.cursor = 'pointer'; qr.title = '点击放大';
+    } catch (e) { qr.textContent = '二维码生成失败：' + e.message; }
     var fmts = [['clash', 'Clash'], ['singbox', 'sing-box'], ['surge', 'Surge'], ['loon', 'Loon'], ['quanx', 'Quantumult X'], ['v2rayn', 'v2rayN'], ['shadowrocket', 'Shadowrocket']];
     $('#fmt-links').innerHTML = fmts.map(function (f) {
       return '<button type="button" class="btn ghost" data-fmt="' + f[0] + '">' + f[1] + '</button>';
@@ -491,8 +524,12 @@ const 客户端脚本 = `
     Array.prototype.slice.call(document.querySelectorAll('[data-fmt]')).forEach(function (b) {
       b.addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=' + b.dataset.fmt); });
     });
+    page.dataset.initialized = 'true';
   }
-  function openQR() { 打开弹层($('#qr-modal')); }
+  function 显示二维码(link) {
+    try { $('#qr-big').innerHTML = window.QRCode.generateSVG(link); 打开弹层($('#qr-modal')); return Promise.resolve(true); }
+    catch (e) { toast('二维码生成失败：' + e.message, false); return Promise.resolve(false); }
+  }
   function closeQR() { 关闭弹层($('#qr-modal')); }
   var _qrClose = document.getElementById('btn-qr-close');
   if (_qrClose) _qrClose.addEventListener('click', closeQR);
@@ -516,8 +553,172 @@ const 客户端脚本 = `
     img.onerror = function () { toast('二维码渲染失败', false); };
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
   });
-  $('#btn-open-qr').addEventListener('click', function () { 打开弹层($('#qr-modal')); });
+  $('#btn-open-qr').addEventListener('click', function () { 显示二维码(S.link || ''); });
   $('#btn-copy-link').addEventListener('click', function () { copy(S.link || ''); });
+  var 生成链接 = '', 预览序号 = 0, 批量节点 = [], 批量序号 = 0, 批量来源 = '', 批量显示数 = 20;
+  function 填充参数表(el, fields) {
+    el.replaceChildren();
+    fields.forEach(function (pair) { var dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = pair[0]; dd.textContent = pair[1]; el.appendChild(dt); el.appendChild(dd); });
+  }
+  function 设置预览状态(text, state) {
+    $('#n-preview-status').textContent = text;
+    $('#n-preview-badge').className = 'pill' + (state ? ' ' + state : '');
+    $('#n-preview-badge').textContent = state === 'ok' ? '已生成' : state === 'err' ? '请检查参数' : state === 'run' ? '生成中' : '等待生成';
+  }
+  function 清除生成结果() {
+    预览序号++; 生成链接 = '';
+    ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = true; });
+    $('#n-generated-link').textContent = '参数已修改，请重新生成预览';
+    $('#n-preview-summary').replaceChildren();
+    设置预览状态('参数已修改，请重新生成。', '');
+    $('#n-form-error').hidden = true;
+    批量序号++; 批量节点 = [];
+    $('#btn-batch-copy').disabled = true; $('#btn-batch-download').disabled = true; $('#n-batch-search').disabled = true;
+    $('#n-batch-filter-status').textContent = ''; $('#btn-batch-more').hidden = true;
+    $('#n-batch-list').replaceChildren();
+    $('#n-source-panel').hidden = true; $('#n-batch-sources').replaceChildren();
+    $('#n-batch-status').textContent = '参数已修改，请重新生成批量链接';
+  }
+  function 字段错误(el) {
+    if (el.validity.valid) return '';
+    if (el.id === 'n-link-port') return '端口必须是 1–65535 之间的整数';
+    return ((el.labels && el.labels[0]) ? el.labels[0].textContent : '该字段') + '不能为空或超出允许范围';
+  }
+  ['#n-link-protocol', '#n-link-transport', '#n-link-address', '#n-link-port', '#n-link-path', '#n-link-remark'].forEach(function (sel) {
+    $(sel).addEventListener('input', function () { this.removeAttribute('aria-invalid'); 清除生成结果(); });
+    $(sel).addEventListener('blur', function () {
+      var error = 字段错误(this);
+      if (error) { this.setAttribute('aria-invalid', 'true'); $('#n-form-error').textContent = error; $('#n-form-error').hidden = false; }
+    });
+  });
+  $('#n-link-protocol').addEventListener('change', function () {
+    if (this.value === 'ss') $('#n-link-transport').value = 'ws';
+    $('#n-link-transport').querySelectorAll('option').forEach(function (opt) { opt.disabled = $('#n-link-protocol').value === 'ss' && opt.value !== 'ws'; });
+  });
+  if (S.协议类型 === 'ss') $('#n-link-transport').querySelectorAll('option').forEach(function (opt) { opt.disabled = opt.value !== 'ws'; });
+  function 当前链接选项() {
+    return { 协议类型: $('#n-link-protocol').value, 传输协议: $('#n-link-transport').value, 地址: $('#n-link-address').value, 端口: $('#n-link-port').value, 路径: $('#n-link-path').value, 备注: $('#n-link-remark').value };
+  }
+  $('#n-link-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var form = this;
+    if (form.dataset.pending === 'true') return;
+    var invalid = Array.from(form.querySelectorAll('input')).find(function (el) { return !el.validity.valid; });
+    if (invalid) {
+      $('#n-form-error').textContent = 字段错误(invalid); $('#n-form-error').hidden = false; invalid.setAttribute('aria-invalid', 'true');
+      if (invalid.id === 'n-link-path') $('#n-advanced').open = true;
+      invalid.focus(); return;
+    }
+    var 本次序号 = ++预览序号;
+    生成链接 = ''; $('#n-form-error').hidden = true;
+    ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = true; });
+    $('#n-preview-summary').replaceChildren(); $('#n-generated-link').textContent = '生成中…';
+    设置预览状态('正在生成链接…', 'run');
+    form.dataset.pending = 'true'; $('#n-preview-panel').setAttribute('aria-busy', 'true');
+    $('#btn-generate-link').disabled = true; $('#btn-generate-link').textContent = '生成中…';
+    api('/admin/api/link-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(当前链接选项()) }).then(function (r) {
+      if (本次序号 !== 预览序号) return;
+      生成链接 = r.link; $('#n-generated-link').textContent = 生成链接;
+      填充参数表($('#n-preview-summary'), window.NodeDiagnostics.inspect(生成链接).fields.filter(function (p) { return ['协议','入口','传输','SNI'].includes(p[0]); }));
+      设置预览状态('链接已生成，可复制到客户端或继续检查参数。', 'ok');
+      ['#btn-copy-generated', '#btn-qr-generated', '#btn-inspect-generated'].forEach(function (s) { $(s).disabled = false; });
+    }).catch(function (e) {
+      if (本次序号 !== 预览序号) return;
+      $('#n-generated-link').textContent = '生成失败：' + e.message; 设置预览状态('生成失败，请修正参数后重试。', 'err');
+      $('#n-form-error').textContent = e.message; $('#n-form-error').hidden = false; $('#n-form-error').focus();
+    }).finally(function () {
+      form.dataset.pending = 'false'; $('#btn-generate-link').disabled = false; $('#btn-generate-link').textContent = '生成预览'; $('#n-preview-panel').setAttribute('aria-busy', 'false');
+    });
+  });
+  $('#btn-copy-generated').addEventListener('click', function () { if (生成链接) copy(生成链接); });
+  $('#btn-qr-generated').addEventListener('click', function () { if (生成链接) 显示二维码(生成链接); });
+  $('#btn-inspect-generated').addEventListener('click', function () { if (生成链接) 检查链接(生成链接, true); });
+  function 检查链接(link, focus) {
+    $('#n-inspect-input').value = link;
+    var report = window.NodeDiagnostics.inspect(link, S.link), target = $('#n-inspect-result');
+    target.replaceChildren();
+    var warning = report.checks.some(function (c) { return c.status === 'warning'; });
+    $('#n-inspect-status').textContent = (report.valid ? (warning ? '参数中有需要核对的项目。' : '参数格式检查通过。') : '发现参数问题，请按下方提示修正。') + '实际连通尚未验证。';
+    var list = document.createElement('ul'); list.className = 'node-checks';
+    report.checks.forEach(function (c) {
+      var li = document.createElement('li'), state = document.createElement('span'), info = document.createElement('div'), label = document.createElement('b'), detail = document.createElement('p');
+      state.className = 'node-check-state ' + c.status; state.textContent = c.status === 'ok' ? '通过' : c.status === 'warning' ? '注意' : '需修正';
+      label.textContent = c.label; detail.textContent = c.detail; info.appendChild(label); info.appendChild(detail); li.appendChild(state); li.appendChild(info); list.appendChild(li);
+    });
+    target.appendChild(list);
+    if (report.fields.length) { var facts = document.createElement('dl'); facts.className = 'node-facts'; 填充参数表(facts, report.fields); target.appendChild(facts); }
+    if (focus) { $('#node-diagnostics').scrollIntoView({ block: 'start' }); $('#n-inspect-status').focus({ preventScroll: true }); }
+  }
+  $('#n-inspect-form').addEventListener('submit', function (event) { event.preventDefault(); 检查链接($('#n-inspect-input').value, false); });
+  $('#n-inspect-input').addEventListener('input', function () { $('#n-inspect-result').replaceChildren(); $('#n-inspect-status').textContent = '链接已修改，请重新检查。'; });
+  function 渲染批量节点() {
+    var query = $('#n-batch-search').value.trim().toLowerCase();
+    var filtered = 批量节点.filter(function (n) { return (n.地址 + ' ' + n.备注).toLowerCase().includes(query); });
+    var list = $('#n-batch-list'); list.replaceChildren();
+    var visible = filtered.slice(0, 批量显示数), fragment = document.createDocumentFragment();
+    visible.forEach(function (n) {
+      var item = document.createElement('article'); item.className = 'node-item';
+      var top = document.createElement('div'); top.className = 'node-item-top';
+      var title = document.createElement('div'); title.className = 'node-item-title';
+      var name = document.createElement('h3'); name.textContent = n.备注;
+      var address = document.createElement('p'); address.className = 'dim'; address.textContent = n.地址 + ':' + n.端口 + ' · ' + (n.来源 === 'add' ? 'ADD.txt' : '当前优选');
+      title.appendChild(name); title.appendChild(address);
+      var actions = document.createElement('div'); actions.className = 'node-actions';
+      [['复制', function () { copy(n.链接); }], ['二维码', function () { 显示二维码(n.链接); }], ['检查', function () { 检查链接(n.链接, true); }]].forEach(function (action) {
+        var button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost'; button.textContent = action[0]; button.setAttribute('aria-label', action[0] + '：' + n.备注); button.addEventListener('click', action[1]); actions.appendChild(button);
+      });
+      top.appendChild(title); top.appendChild(actions); item.appendChild(top);
+      var details = document.createElement('details'); details.className = 'node-details';
+      var summary = document.createElement('summary'); summary.textContent = '链接详情';
+      var code = document.createElement('div'); code.className = 'mono'; code.textContent = n.链接;
+      details.appendChild(summary); details.appendChild(code); item.appendChild(details); fragment.appendChild(item);
+    });
+    if (!visible.length) { var empty = document.createElement('p'); empty.className = 'node-empty'; empty.textContent = query ? '没有匹配节点，试试其他地址或备注。' : '没有可导出的节点，请检查来源内容。'; fragment.appendChild(empty); }
+    list.appendChild(fragment);
+    $('#n-batch-filter-status').textContent = '匹配 ' + filtered.length + ' 条 · 已显示 ' + visible.length + ' 条';
+    $('#btn-batch-more').hidden = visible.length >= filtered.length;
+  }
+  $('#n-batch-search').addEventListener('input', function () { 批量显示数 = 20; 渲染批量节点(); });
+  $('#btn-batch-more').addEventListener('click', function () { 批量显示数 += 20; 渲染批量节点(); });
+  function 批量生成(source) {
+    var 本次序号 = ++批量序号;
+    批量节点 = []; 批量来源 = source; 批量显示数 = 20;
+    $('#btn-batch-copy').disabled = true; $('#btn-batch-download').disabled = true; $('#n-batch-search').disabled = true;
+    $('#n-batch-search').value = ''; $('#n-batch-filter-status').textContent = ''; $('#btn-batch-more').hidden = true;
+    $('#btn-batch-add').disabled = true; $('#btn-batch-preferred').disabled = true;
+    $('#n-batch-list').replaceChildren(); $('#node-batch').setAttribute('aria-busy', 'true');
+    $('#n-source-panel').hidden = true; $('#n-batch-sources').replaceChildren();
+    $('#n-batch-status').textContent = '正在读取' + (source === 'add' ? ' ADD.txt' : '当前优选结果') + '…';
+    api('/admin/api/link-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ source: source }, 当前链接选项())) }).then(function (r) {
+      if (本次序号 !== 批量序号) return;
+      批量节点 = r.节点 || [];
+      var sources = r.来源诊断 || [];
+      $('#n-source-panel').hidden = !sources.length;
+      $('#n-source-panel').open = sources.some(function (s) { return s.state !== 'ok'; });
+      sources.forEach(function (s) {
+        var li = document.createElement('li'), state = document.createElement('span'), info = document.createElement('div'), label = document.createElement('b'), detail = document.createElement('p');
+        var warning = ['empty', 'partial', 'fallback', 'limited'].includes(s.state);
+        state.className = 'node-check-state ' + (s.state === 'ok' ? 'ok' : warning ? 'warning' : 'error');
+        state.textContent = s.state === 'ok' ? '通过' : warning ? '注意' : '失败';
+        label.textContent = s.source; detail.textContent = s.message + (s.count && s.state !== 'limited' ? ' · ' + s.count + ' 条' : '');
+        info.appendChild(label); info.appendChild(detail); li.appendChild(state); li.appendChild(info); $('#n-batch-sources').appendChild(li);
+      });
+      $('#n-batch-status').textContent = (source === 'add' ? 'ADD.txt' : '当前优选') + '：生成 ' + 批量节点.length + ' 条 · 去重 ' + r.重复 + ' · 跳过 ' + r.跳过 + ' · 超限 ' + r.超限 + (r.未请求优选API数量 ? '；另有 ' + r.未请求优选API数量 + ' 个远端源未读取' : '');
+      $('#btn-batch-copy').disabled = !批量节点.length; $('#btn-batch-download').disabled = !批量节点.length; $('#n-batch-search').disabled = !批量节点.length;
+      渲染批量节点();
+    }).catch(function (e) { if (本次序号 === 批量序号) $('#n-batch-status').textContent = '批量生成失败：' + e.message; })
+      .finally(function () { $('#btn-batch-add').disabled = false; $('#btn-batch-preferred').disabled = false; $('#node-batch').setAttribute('aria-busy', 'false'); });
+  }
+  $('#btn-batch-add').addEventListener('click', function () { 批量生成('add'); });
+  $('#btn-batch-preferred').addEventListener('click', function () { 批量生成('preferred'); });
+  $('#btn-batch-copy').addEventListener('click', function () { if (批量节点.length) copy(批量节点.map(function (n) { return n.链接; }).join('\\n')); });
+  $('#btn-batch-download').addEventListener('click', function () {
+    if (!批量节点.length) return;
+    var blob = new Blob([批量节点.map(function (n) { return n.链接; }).join('\\n') + '\\n'], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'edgetunnel-' + 批量来源 + '-nodes.txt'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  });
   $('#btn-copy-sub').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token); });
   $('#btn-copy-clash').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=clash&native=1'); });
   $('#btn-copy-singbox').addEventListener('click', function () { copy('https://' + S.host + '/sub?token=' + S.token + '&target=singbox&native=1'); });
@@ -543,8 +744,11 @@ const 客户端脚本 = `
 
   // 配置
   function loadConfig() {
+    if ($('#cfg').dataset.loadState === 'loading') return;
+    设置编辑状态('#cfg', 'loading');
     api('/admin/config.json').then(function (cfg) {
       $('#cfg').value = JSON.stringify(cfg, null, 2);
+      设置编辑状态('#cfg', 'ready');
       已加载配置文本 = $('#cfg').value; 校验编辑器(); 编辑器渲染(); 恢复草稿提示();
       var p = cfg.协议类型; if (p) $('#c-协议类型').value = p;
       var t = cfg.传输协议; if (t) $('#c-传输协议').value = t;
@@ -554,7 +758,7 @@ const 客户端脚本 = `
       var ts = cfg.TLS分片; $('#c-TLS分片').value = (ts === 'Shadowrocket' || ts === 'Happ') ? ts : '';
       $('#c-ECH').checked = !!cfg.ECH;
       $('#c-启用0RTT').checked = !!cfg.启用0RTT;
-    }).catch(function (e) { statusCfg('加载失败：' + e.message); });
+    }).catch(function (e) { 设置编辑状态('#cfg', 'failed'); statusCfg('加载失败：' + e.message + '，请点击重新加载'); });
   }
   function statusCfg(m) { var s = $('#cfg-status'); if (s) s.textContent = m; }
   $('#btn-load-json').addEventListener('click', function () { loadConfig(); statusCfg(''); });
@@ -576,6 +780,7 @@ const 客户端脚本 = `
     api('/admin/config/restore', { method: 'POST' }).then(function (r) { statusCfg('已提交：' + (r.message || '')); }).catch(function (e) { statusCfg('恢复失败：' + e.message); });
   });
   $('#btn-save-ess').addEventListener('click', function () {
+    if (!编辑可用('#cfg')) return;
     api('/admin/config.json').then(function (cfg) {
       cfg.协议类型 = $('#c-协议类型').value; cfg.传输协议 = $('#c-传输协议').value;
       cfg.PATH = $('#c-PATH').value; cfg.Fingerprint = $('#c-Fingerprint').value;
@@ -623,12 +828,18 @@ const 客户端脚本 = `
     if (st) st.textContent = '共 ' + 总行 + ' 行 · 去重后 ' + 优选IP条目.length + ' 条 · 样例: ' + entry.slice(0, 3).map(function (e) { return e.host + ':' + e.port; }).join(', ');
   }
   function loadOps() {
-    取文本('/admin/ADD.txt').then(function (t) {
-      骨架完毕('#o-add');
-      var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
-      if (typeof t === 'string') { $('#o-add').value = t; 解析优选IP(t); }
-    }).catch(function (e) { 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
-    加载优选配置().catch(function (e) { 设文本('#o-lib-note', '优选配置加载失败：' + e.message); });
+    if (!['loading', 'ready'].includes($('#o-add').dataset.loadState)) {
+      设置编辑状态('#o-add', 'loading');
+      取文本('/admin/ADD.txt').then(function (t) {
+        if (typeof t !== 'string') throw new Error('地址库响应无效');
+        $('#o-add').value = t; 解析优选IP(t); 设置编辑状态('#o-add', 'ready');
+        骨架完毕('#o-add');
+        var sk = document.getElementById('o-add-sk'); if (sk) sk.remove();
+      }).catch(function (e) { 设置编辑状态('#o-add', 'failed'); 骨架完毕('#o-add'); 内联错误('#o-add-sk', '优选 IP 加载失败：' + e.message, loadOps); });
+    }
+    if (!['loading', 'ready'].includes($('#o-lib-random').dataset.loadState)) {
+      加载优选配置().catch(function (e) { 内联错误('#o-lib-note', '优选配置加载失败：' + e.message, loadOps); });
+    }
   }
   function 设文本(sel, 文案) { var el = $(sel); if (el) el.textContent = 文案; }
 
@@ -642,13 +853,14 @@ const 客户端脚本 = `
     优选API结果 = null;
     设徽章('#o-api-result', 'run', '验证中…');
     if (out) { out.textContent = ''; out.style.display = 'none'; }
-    取('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
+    api('/admin/getADDAPI?url=' + encodeURIComponent(地址) + '&port=' + encodeURIComponent(端口))
       .then(function (r) {
         if (!r || !r.success) throw new Error((r && r.msg) || '接口未返回可用结果');
         var data = r.data || [];
         优选API结果 = data;
-        设徽章('#o-api-result', data.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
-        if (out) { out.textContent = data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
+        var 提示 = (r.sources || []).filter(function (s) { return s.state !== 'ok'; }).map(function (s) { return s.source + '：' + s.message; });
+        设徽章('#o-api-result', data.length && !提示.length ? 'ok' : 'warn', data.length ? ('可用 ' + data.length + ' 条') : '解析结果为空');
+        if (out) { out.textContent = (提示.length ? 提示.join('\\n') + '\\n' : '') + data.slice(0, 20).join('\\n') + (data.length > 20 ? ('\\n… 共 ' + data.length + ' 条') : ''); out.style.display = ''; }
         toast('优选 API 验证通过：' + data.length + ' 条', data.length > 0);
       })
       .catch(function (e) {
@@ -660,6 +872,7 @@ const 客户端脚本 = `
   });
   // 追加写入只改编辑器内容，不碰 KV：仍需用户确认后点「保存优选 IP」。
   $('#btn-api-to-add').addEventListener('click', function () {
+    if (!编辑可用('#o-add')) return;
     if (!优选API结果 || !优选API结果.length) { toast('请先验证优选 API', false); return; }
     var ta = $('#o-add');
     var 已有 = {};
@@ -683,15 +896,18 @@ const 客户端脚本 = `
 
   // —— 本地 IP 库：读的是生效配置，写的是 KV cfg:{host}（与「常用字段」同一入口）——
   function 加载优选配置() {
+    设置编辑状态('#o-lib-random', 'loading');
     return 取('/admin/config.json').then(function (cfg) {
       var 生成 = (cfg && cfg.优选订阅生成) || {}, 库 = 生成.本地IP库 || {};
       if ($('#o-lib-random')) $('#o-lib-random').checked = !!库.随机IP;
       if ($('#o-lib-count')) $('#o-lib-count').value = 库.随机数量 != null ? 库.随机数量 : 16;
       if ($('#o-lib-port')) $('#o-lib-port').value = 库.指定端口 != null ? 库.指定端口 : -1;
+      设置编辑状态('#o-lib-random', 'ready');
       设文本('#o-lib-note', 生成.local ? '当前：本地优选地址' : '当前：优选订阅生成器（SUB）');
-    });
+    }).catch(function (e) { 设置编辑状态('#o-lib-random', 'failed'); throw e; });
   }
   $('#btn-save-lib').addEventListener('click', function () {
+    if (!编辑可用('#o-lib-random')) return;
     var 数量 = Number($('#o-lib-count').value.trim()), 端口 = Number($('#o-lib-port').value.trim());
     if (!Number.isInteger(数量) || 数量 < 1 || 数量 > 100) { toast('随机数量须为 1–100 的整数', false); return; }
     if (!Number.isInteger(端口) || (端口 !== -1 && (端口 < 1 || 端口 > 65535))) { toast('指定端口须为 -1 或 1–65535', false); return; }
@@ -776,6 +992,7 @@ const 客户端脚本 = `
   }
   $('#btn-refresh-usage').addEventListener('click', function () { 刷新用量(false); });
   $('#btn-save-add').addEventListener('click', function () {
+    if (!编辑可用('#o-add')) return;
     fetch('/admin/ADD.txt', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: $('#o-add').value })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (r) { toast(r.message || '已保存', true); }).catch(function (e) { toast('保存失败：' + e.message, false); });
@@ -970,8 +1187,7 @@ const 客户端脚本 = `
   $('#btn-run-check').addEventListener('click', function () { loadCheck(false); });
   $('#btn-run-deep').addEventListener('click', function () { loadCheck(true); });
   $('#btn-copy-check').addEventListener('click', 复制自检);
-  // 首屏若停留在自检 Tab，自动跑一次快捷自检（深度诊断需手动触发）。
-  try { if (localStorage.getItem('et_admin_tab') === 'check') loadCheck(false); } catch (e) {}
+  // 自检仅在用户点击按钮时运行，切换页签不触发出站探测。
   // 从节点链接提取凭据：ss 链接是 ss://base64(加密方式:凭据)@host…，
   // 直接按 '@' 切分会得到 base64 串，诊断 JSON 里的 uuid 就是错的。
   function 从链接取凭据(link) {
@@ -1008,6 +1224,7 @@ const 客户端脚本 = `
     copy($('#cfg').value);
   });
   $('#btn-cfg-import').addEventListener('click', function () {
+    if (!编辑可用('#cfg')) return;
     if (!navigator.clipboard || !navigator.clipboard.readText) { toast('浏览器不支持剪贴板读取', false); return; }
     navigator.clipboard.readText().then(function (t) {
       var v;
@@ -1040,13 +1257,22 @@ const 客户端脚本 = `
 
   // 回到页面自动刷新用量；header 刷新
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') loadOverview();
+    if (document.visibilityState === 'visible' && document.querySelector('[data-tab="overview"].on')) loadOverview();
   });
-  // 页头刷新：用量走真实查询（此前只重绘，点"刷新"用量不会变），并刷新节点与诊断。
-  $('#btn-refresh-top').addEventListener('click', function () { loadNodes(); loadDiag(); 刷新用量(false); });
-  loadDiag();
+  // 页头明确标注刷新用量，避免覆盖正在编辑的配置与地址库。
+  $('#btn-refresh-top').addEventListener('click', function () { 刷新用量(false); });
 
-  loadOverview(); loadNodes(); loadConfig(); loadOps();
+  Object.keys(编辑分组).forEach(function (key) { 设置编辑状态(key, 'idle'); });
+  // 全局命令也能打开二维码，弹层不能放在隐藏页签内。
+  document.body.appendChild($('#qr-modal'));
+
+  // 所有组件初始化后，只加载当前页签，避免隐藏页签抢先读取或重置表单。
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('et_admin_tab'); } catch (e) {}
+    var initial = tabs.find(function (b) { return b.dataset.tab === saved; }) || tabs[0];
+    switchTab(initial);
+  })();
 })();
 `;
 

@@ -28,7 +28,11 @@ async function 写入用量快照(env, host, usage) {
   const rows = await 读取用量历史(env, host);
   const last = rows[rows.length - 1];
   if (last && last.date === date) {
-    // 同日去重：仅更新时间与数值
+    // 未变化不重复写；同日最多每五分钟更新一次，降低 KV 写入消耗。
+    // KV 跨地域最终一致，此限制不是跨 isolate 的全局互斥锁。
+    if (['pages', 'workers', 'total', 'max'].every(k => last[k] === ({ pages, workers, total, max })[k])) return;
+    const 上次更新 = Date.parse(last.updatedAt);
+    if (Number.isFinite(上次更新) && Date.now() >= 上次更新 && Date.now() - 上次更新 < 300000) return;
     last.pages = pages; last.workers = workers; last.total = total; last.max = max; last.updatedAt = new Date().toISOString();
   } else {
     rows.push({ date, pages, workers, total, max, updatedAt: new Date().toISOString() });

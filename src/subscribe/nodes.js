@@ -1,7 +1,9 @@
-import { base64SecretEncode, 获取传输协议配置, 获取传输路径参数值 } from '../core/options.js';
-import { 替换星号为随机字符, 随机路径 } from '../core/paths.js';
+import { 创建节点模型, 序列化节点链接 } from '../core/link.js';
+import { base64SecretEncode } from '../core/options.js';
+import { 替换星号为随机字符 } from '../core/paths.js';
 import { 整理成数组 } from '../core/strings.js';
 import { 获取SOCKS5账号, 获取代理默认端口 } from '../proxy/account.js';
+import { 优选来源结果 } from '../proxy/source-fetch.js';
 import { 生成随机IP, 获取优选订阅生成器数据, 请求优选API } from '../proxy/preferred.js';
 const 订阅类型映射表 = [
 	{ 类型: 'loon', 参数: ['loon'], UA: ['loon'] },
@@ -27,14 +29,18 @@ function 订阅转换器目标(订阅类型) {
 	return 订阅类型; // loon / clash / singbox / 显式 target 参数
 }
 
-async function 获取订阅节点列表(config_JSON, url, request, env) {
+async function 获取订阅节点列表(config_JSON, url, request, env, 最大外部源数 = 8) {
 	let 完整优选IP = [], 其他节点LINK = '', 反代IP池 = [];
+	let 未请求优选API数量 = 0;
+	const 来源诊断 = [];
 	if (!url.searchParams.has('sub') && config_JSON.优选订阅生成.local) { // 本地生成订阅
-		const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (
-			await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-		)[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (
-			await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-		)[0];
+		const 保存的地址 = config_JSON.优选订阅生成.本地IP库.随机IP ? null : await env.KV.get('ADD.txt');
+		let 完整优选列表;
+		if (保存的地址) 完整优选列表 = await 整理成数组(保存的地址);
+		else {
+			const 随机结果 = await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口);
+			完整优选列表 = 随机结果[0]; 来源诊断.push(随机结果[2]);
+		}
 		const 优选API = [], 优选IP = [], 其他节点 = [];
 		for (const 元素 of 完整优选列表) {
 			if (元素.toLowerCase().startsWith('sub://')) {
@@ -62,7 +68,10 @@ async function 获取订阅节点列表(config_JSON, url, request, env) {
 				}
 			}
 		}
-		const 请求优选API内容 = await 请求优选API(优选API, '443');
+		未请求优选API数量 = Math.max(0, 优选API.length - 最大外部源数);
+		const 请求优选API内容 = await 请求优选API(优选API.slice(0, 最大外部源数), '443');
+		来源诊断.push(...请求优选API内容[4]);
+		if (未请求优选API数量) 来源诊断.push(优选来源结果('其余优选源', 'limited', 未请求优选API数量));
 		const 合并其他节点数组 = [...new Set(其他节点.concat(请求优选API内容[1]))];
 		其他节点LINK = 合并其他节点数组.length > 0 ? 合并其他节点数组.join('\n') + '\n' : '';
 		const 优选API的IP = 请求优选API内容[0];
@@ -70,15 +79,15 @@ async function 获取订阅节点列表(config_JSON, url, request, env) {
 		完整优选IP = [...new Set(优选IP.concat(优选API的IP))];
 	} else { // 优选订阅生成器
 		let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
-		const [优选生成器IP数组, 优选生成器其他节点] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
+		const [优选生成器IP数组, 优选生成器其他节点, 状态] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
+		来源诊断.push(状态);
 		完整优选IP = 完整优选IP.concat(优选生成器IP数组);
 		其他节点LINK += 优选生成器其他节点;
 	}
-	return { 完整优选IP, 其他节点LINK, 反代IP池 };
+	return { 完整优选IP, 其他节点LINK, 反代IP池, 未请求优选API数量, 来源诊断 };
 }
 
 function 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池, config_JSON, 协议类型, 作为优选订阅生成器, isLoonOrSurge, isSubConverterRequest, userID, ECHLINK参数, TLS分片参数) {
-	const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
 	return 其他节点LINK + 完整优选IP.map(原始地址 => {
 		// 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
 		// 示例:
@@ -118,19 +127,9 @@ function 生成节点链接文本(完整优选IP, 其他节点LINK, 反代IP池,
 		}
 		if (isLoonOrSurge) 完整节点路径 = 完整节点路径.replace(/,/g, '%2C');
 
-		if (协议类型 === 'ss' && !作为优选订阅生成器) {
-			if (!config_JSON.SS.TLS) {
-				const TLS端口 = [443, 2053, 2083, 2087, 2096, 8443];
-				const NOTLS端口 = [80, 2052, 2082, 2086, 2095, 8080];
-				节点端口 = String(NOTLS端口[TLS端口.indexOf(Number(节点端口))] ?? 节点端口);
-			}
-			完整节点路径 = (完整节点路径.includes('?') ? 完整节点路径.replace('?', '?enc=' + config_JSON.SS.加密方式 + '&') : (完整节点路径 + '?enc=' + config_JSON.SS.加密方式)).replace(/([=,])/g, '\\$1');
-			if (!isSubConverterRequest) 完整节点路径 = 完整节点路径 + ';mux=0';
-			return `${协议类型}://${btoa(config_JSON.SS.加密方式 + ':00000000-0000-4000-8000-000000000000')}@${节点地址}:${节点端口}?plugin=v2${encodeURIComponent('ray-plugin;mode=websocket;host=example.com;path=' + (config_JSON.随机路径 ? 随机路径(完整节点路径) : 完整节点路径) + (config_JSON.SS.TLS ? ';tls' : '')) + ECHLINK参数 + TLS分片参数}#${encodeURIComponent(节点备注)}`;
-		} else {
-			const 传输路径参数值 = 获取传输路径参数值(config_JSON, 完整节点路径, 作为优选订阅生成器);
-			return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=example.com&fp=${config_JSON.Fingerprint}&sni=example.com&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none${config_JSON.ALPN ? '&alpn=' + encodeURIComponent(config_JSON.ALPN) : ''}#${encodeURIComponent(节点备注)}`;
-		}
+		return 序列化节点链接(创建节点模型(config_JSON, '00000000-0000-4000-8000-000000000000', 'example.com', {
+			协议类型, 地址: 节点地址, 端口: 节点端口, 路径: 完整节点路径, 备注: 节点备注,
+		}, { 订阅: true, 订阅生成器: 作为优选订阅生成器, 转换器请求: isSubConverterRequest, ECH参数: ECHLINK参数, TLS分片参数 }));
 	}).filter(item => item !== null).join('\n');
 }
 

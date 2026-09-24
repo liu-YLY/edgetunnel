@@ -1,0 +1,216 @@
+{
+  "base": {
+    "UUID": "11111111-1111-4111-8111-111111111111",
+    "协议类型": "vless",
+    "传输协议": "ws",
+    "gRPC模式": "gun",
+    "PATH": "/edge",
+    "完整节点路径": "/edge?p=one,two&ed=2560",
+    "启用0RTT": true,
+    "随机路径": false,
+    "Fingerprint": "chrome",
+    "ALPN": "h2,http/1.1",
+    "ECH": true,
+    "ECHConfig": {
+      "DNS": "https://dns.example/dns-query",
+      "SNI": "ech.example"
+    },
+    "TLS分片": "Happ",
+    "SS": {
+      "加密方式": "aes-128-gcm",
+      "TLS": true
+    },
+    "优选订阅生成": {
+      "SUBNAME": "测试节点"
+    }
+  },
+  "defaultAddresses": [
+    "1.1.1.1:443#中文备注",
+    "[2606:4700::1]:8443#IPv6"
+  ],
+  "cases": [
+    {
+      "name": "vless-ws",
+      "patch": {
+        "协议类型": "vless",
+        "传输协议": "ws"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "vless-grpc",
+      "patch": {
+        "协议类型": "vless",
+        "传输协议": "grpc"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=worker.example&fp=chrome&sni=worker.example&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "vless-xhttp",
+      "patch": {
+        "协议类型": "vless",
+        "传输协议": "xhttp"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "trojan-ws",
+      "patch": {
+        "协议类型": "trojan",
+        "传输协议": "ws"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "trojan://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "trojan://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\ntrojan://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "trojan-grpc",
+      "patch": {
+        "协议类型": "trojan",
+        "传输协议": "grpc"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "trojan://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=worker.example&fp=chrome&sni=worker.example&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "trojan://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\ntrojan://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=grpc&mode=gun&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "trojan-xhttp",
+      "patch": {
+        "协议类型": "trojan",
+        "传输协议": "xhttp"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "trojan://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "trojan://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\ntrojan://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=xhttp&mode=stream-one&extra=%7B%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingMethod%22%3A%22tokenish%22%2C%22xPaddingPlacement%22%3A%22queryInHeader%22%2C%22xPaddingHeader%22%3A%22111111%22%2C%22xPaddingKey%22%3A%22_111111%22%7D&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "grpc-multi",
+      "patch": {
+        "传输协议": "grpc",
+        "gRPC模式": "multi"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=grpc&mode=multi&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=worker.example&fp=chrome&sni=worker.example&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=grpc&mode=multi&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=grpc&mode=multi&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&authority=example.com&fp=chrome&sni=example.com&serviceName=%2Fedge&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "ss-tls",
+      "patch": {
+        "协议类型": "ss"
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "ss://YWVzLTEyOC1nY206MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx@worker.example:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dworker.example%3Bpath%3D%2Fedge%3Fenc%3Daes-128-gcm%26p%3Done%2Ctwo%26ed%3D2560%3Btls%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "ss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@1.1.1.1:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@[2606:4700::1]:8443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#IPv6"
+    },
+    {
+      "name": "ss-no-tls",
+      "patch": {
+        "协议类型": "ss",
+        "SS": {
+          "加密方式": "aes-256-gcm",
+          "TLS": false
+        }
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "ss://YWVzLTI1Ni1nY206MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx@worker.example:80?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dworker.example%3Bpath%3D%2Fedge%3Fenc%3Daes-256-gcm%26p%3Done%2Ctwo%26ed%3D2560%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "ss://YWVzLTI1Ni1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@1.1.1.1:80?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-256-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nss://YWVzLTI1Ni1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@[2606:4700::1]:8080?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-256-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#IPv6"
+    },
+    {
+      "name": "ss-converter",
+      "patch": {
+        "协议类型": "ss"
+      },
+      "converter": true,
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "ss://YWVzLTEyOC1nY206MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx@worker.example:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dworker.example%3Bpath%3D%2Fedge%3Fenc%3Daes-128-gcm%26p%3Done%2Ctwo%26ed%3D2560%3Btls%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "ss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@1.1.1.1:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@[2606:4700::1]:8443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#IPv6"
+    },
+    {
+      "name": "ss-generator",
+      "patch": {
+        "协议类型": "ss"
+      },
+      "generator": true,
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "ss://YWVzLTEyOC1nY206MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx@worker.example:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dworker.example%3Bpath%3D%2Fedge%3Fenc%3Daes-128-gcm%26p%3Done%2Ctwo%26ed%3D2560%3Btls%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "ss://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2F&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nss://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2F&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "loon-comma",
+      "patch": {},
+      "loon": true,
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%252Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%252Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "native-no-extras",
+      "patch": {},
+      "ech": "",
+      "fragment": "",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "vless-random",
+      "patch": {
+        "随机路径": true
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Ffaq%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Ffaq%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fnote%2Fplayer%2Ffriends%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "ss-random",
+      "patch": {
+        "协议类型": "ss",
+        "随机路径": true
+      },
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "ss://YWVzLTEyOC1nY206MTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTEx@worker.example:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dworker.example%3Bpath%3D%2Fedge%3Fenc%3Daes-128-gcm%26p%3Done%2Ctwo%26ed%3D2560%3Btls%3Bmux%3D0&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "ss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@1.1.1.1:443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Ffaq%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nss://YWVzLTEyOC1nY206MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAw@[2606:4700::1]:8443?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dexample.com%3Bpath%3D%2Fnote%2Fplayer%2Ffriends%2Fedge%3Fenc%5C%3Daes-128-gcm%26p%5C%3Done%5C%2Ctwo%26ed%5C%3D2560%3Bmux%3D0%3Btls&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fragment=3%2C1%2Ctlshello#IPv6"
+    },
+    {
+      "name": "proxy-pool",
+      "patch": {},
+      "pool": [
+        "1.1.1.1:2053"
+      ],
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%2Fproxyip%3D1.1.1.1%3A2053%3Fed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E4%B8%AD%E6%96%87%E5%A4%87%E6%B3%A8\nvless://00000000-0000-4000-8000-000000000000@[2606:4700::1]:8443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#IPv6"
+    },
+    {
+      "name": "chain",
+      "patch": {},
+      "addresses": [
+        "node.example:443#节点$socks5://u:p@proxy.example:1080"
+      ],
+      "ech": "&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query",
+      "fragment": "&fragment=3%2C1%2Ctlshello",
+      "primary": "vless://11111111-1111-4111-8111-111111111111@worker.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=worker.example&fp=chrome&sni=worker.example&path=%2Fedge%3Fp%3Done%2Ctwo%26ed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E6%B5%8B%E8%AF%95%E8%8A%82%E7%82%B9",
+      "subscription": "vless://00000000-0000-4000-8000-000000000000@node.example:443?security=tls&type=ws&ech=ech.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&host=example.com&fp=chrome&sni=example.com&path=%2Fvideo%2FShNFSEFUEwsPQl5SWl4BEx0TWEtUQ19MXFQTCxNEEx0TQVBCQkZeQ1UTCxNdEx0TWUJHRV9QQF0TCxNdQ15JSB9USVBcQV1UEx0TQV5DRRMXAAEJAVA%3D%3Fed%3D2560&fragment=3%2C1%2Ctlshello&encryption=none&alpn=h2%2Chttp%2F1.1#%E8%8A%82%E7%82%B9"
+    }
+  ]
+}
