@@ -35,4 +35,5 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run test:runtime
+      - run: npm run test:proto
       - run: npm run deploy:check

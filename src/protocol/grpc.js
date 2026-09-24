@@ -1,4 +1,4 @@
-import { 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
+import { 创建可增长缓冲, 数据转Uint8Array, 有效数据长度 } from '../core/bytes.js';
 import { 下行Grain包字节 } from '../core/constants.js';
 import { log } from '../core/context.js';
 import { 解析木马请求 } from './trojan.js';
@@ -164,22 +164,22 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 
 			let 转发失败 = false;
 			try {
-				let pending = new Uint8Array(0);
+				const 重组缓冲 = 创建可增长缓冲();
 				while (true) {
 					const { done, value } = await reader.read();
 					if (done) break;
 					if (!value || value.byteLength === 0) continue;
 					const 当前块 = value instanceof Uint8Array ? value : new Uint8Array(value);
-					const merged = new Uint8Array(pending.length + 当前块.length);
-					merged.set(pending, 0);
-					merged.set(当前块, pending.length);
-					pending = merged;
-					while (pending.byteLength >= 5) {
-						const grpcLen = ((pending[1] << 24) >>> 0) | (pending[2] << 16) | (pending[3] << 8) | pending[4];
+					重组缓冲.追加(当前块);
+					while (重组缓冲.剩余字节数 >= 5) {
+						const 帧视图 = 重组缓冲.视图();
+						const grpcLen = ((帧视图[1] << 24) >>> 0) | (帧视图[2] << 16) | (帧视图[3] << 8) | 帧视图[4];
 						const frameSize = 5 + grpcLen;
-						if (pending.byteLength < frameSize) break;
-						const grpcPayload = pending.subarray(5, frameSize);
-						pending = pending.slice(frameSize);
+						if (重组缓冲.剩余字节数 < frameSize) break;
+						// 每帧提取独立副本（与旧实现 slice(frameSize) 拷贝量等量），
+						// 避免 payload 跨 await 持有视图时被后续 追加() 扩容或前移失效。
+						const grpcPayload = 帧视图.slice(5, frameSize);
+						重组缓冲.消费(frameSize);
 						if (!grpcPayload.byteLength) continue;
 						let payload = grpcPayload;
 						if (payload.byteLength >= 2 && payload[0] === 0x0a) {

@@ -5,6 +5,7 @@
     "build": "node build.js --force --out _worker.js",
     "test": "node scripts/test-modules.cjs && node --import ./scripts/register-test-loader.mjs scripts/test-config.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-subscribe.mjs && node --import ./scripts/register-test-loader.mjs scripts/test-regression.mjs && node scripts/test-ui.mjs && node scripts/test-links.mjs && node scripts/test-preferred.mjs && node scripts/test-usage-history.mjs",
     "test:runtime": "node scripts/test-runtime.cjs",
+    "test:proto": "node scripts/test-grpc-xhttp.cjs",
     "check": "node scripts/verify.js && npm test",
     "dev": "wrangler dev --local-protocol https",
     "deploy:check": "wrangler deploy --env \"\" --dry-run --outdir dist",
