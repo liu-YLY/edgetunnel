@@ -1,5 +1,5 @@
 // 管理面板渲染入口：拼装 head（主题/样式）+ shell + 各 Tab + 客户端脚本。
-// 依赖 core/html.js（转义、掩码）、admin/qr.js（二维码运行时）、
+// 依赖 core/html.js（转义、掩码）、admin/qr.js（构建期内联二维码脚本）、
 // 同目录 theme/styles/icons/client 与 tabs/*。
 import { 掩码敏感信息, 转义HTML } from '../../core/html.js';
 import { 二维码运行时 } from '../qr.js';
@@ -142,7 +142,7 @@ function 页头(sse) {
   <div class="row">
     <button type="button" class="iconbtn" id="btn-theme" title="切换深色/浅色主题">${图标('theme')}主题</button>
     <button type="button" class="iconbtn" id="btn-motion" title="切换动效档位">${图标('motion')}动效</button>
-    <button type="button" class="iconbtn" id="btn-refresh-top" title="刷新状态与用量">${图标('refresh')}刷新</button>
+    <button type="button" class="iconbtn" id="btn-refresh-top" title="查询最新用量，不重载编辑内容">${图标('refresh')}用量</button>
     <a class="lnk" href="#top">${图标('up')}置顶</a>
     <a class="lnk" href="/logout">${图标('logout')}退出登录</a>
   </div>

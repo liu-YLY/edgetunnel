@@ -1,4 +1,4 @@
-import { 识别订阅类型, 订阅转换器目标 } from '../src/subscribe/nodes.js';
+import { 获取订阅节点列表, 识别订阅类型, 订阅转换器目标 } from '../src/subscribe/nodes.js';
 import { 生成Clash订阅 } from '../src/subscribe/format-native.js';
 import { 生成Shadowrocket订阅 } from '../src/subscribe/format-shadowrocket.js';
 import { 生成V2rayN订阅 } from '../src/subscribe/format-v2rayn.js';
@@ -117,6 +117,21 @@ import nodeCrypto from 'node:crypto';
   // 本地不支持的配置必须明确拒绝（由调用方回落转换器，而不是静默降级）
   assert.throws(() => 生成Clash订阅(直出节点, { ...直出配置, ECH: true }), 'ECH 配置应明确拒绝');
   assert.throws(() => 生成Clash订阅(直出节点, { ...直出配置, TLS分片: 'Happ' }), 'TLS 分片应明确拒绝');
+  const 多源文本 = Array.from({ length: 10 }, (_, i) => `https://preferred${i}.example/ip.txt`).join('\n');
+  let 地址读取次数 = 0;
+  const 受限结果 = await 获取订阅节点列表({ 优选订阅生成: { local: true, 本地IP库: { 随机IP: false } } }, urlOf('sub'), { url: 'https://example.com/sub' }, { KV: { get: async () => { 地址读取次数++; return 多源文本; } } }, 0);
+  assert.equal(受限结果.未请求优选API数量, 10, '批量预览应能限制远端优选源数量');
+  assert.equal(地址读取次数, 1, '同次优选解析只应读取一次 ADD.txt');
+
+  const 原fetch = globalThis.fetch;
+  let 源请求数 = 0;
+  globalThis.fetch = async () => { 源请求数++; return new Response('1.1.1.1:443'); };
+  try {
+    const 默认结果 = await 获取订阅节点列表({ 优选订阅生成: { local: true, 本地IP库: { 随机IP: false } } }, urlOf('sub'), { url: 'https://example.com/sub' }, { KV: { get: async () => 多源文本 } });
+    assert.equal(源请求数, 8, '普通订阅也必须限制远端源请求数');
+    assert.equal(默认结果.未请求优选API数量, 2);
+    assert.equal(默认结果.来源诊断.length, 9);
+  } finally { globalThis.fetch = 原fetch; }
 
   console.log('[test] 订阅分流：UA→类型 / 参数优先 / 默认 mixed / target 映射 / 直出链接 / Loon&QuanX 热补丁 / Clash 本地直出');
   console.log('[test] 全部断言通过');

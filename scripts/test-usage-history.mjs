@@ -28,6 +28,16 @@ function 构造KV() {
   assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(rows[0].date), `date 为 YYYY-MM-DD 格式：${rows[0].date}`);
   assert.ok(rows[0].updatedAt, '应有 updatedAt');
 
+  // 不变或五分钟内变化都不应重复写入，保留原快照时间。
+  let writes = 0;
+  const put = env.KV.put;
+  env.KV.put = async (...args) => { writes++; return put(...args); };
+  await 写入用量快照(env, 'edt2.example.org', { pages: 10, workers: 300, total: 310, max: 100000 });
+  await 写入用量快照(env, 'edt2.example.org', { pages: 12, workers: 400, total: 412, max: 100000 });
+  assert.equal(writes, 0, '重复或过于频繁的快照不消耗 KV 写入');
+  rows[0].updatedAt = new Date(Date.now() - 300001).toISOString();
+  env.KV._map.set('usage:edt2.example.org', JSON.stringify(rows));
+
   // 3) 同日去重：再写一次（仍是今天）只更新时间不新增条数
   await 写入用量快照(env, 'edt2.example.org', { success: true, pages: 12, workers: 400, total: 412, max: 100000 });
   rows = await 读取用量历史(env, 'edt2.example.org');

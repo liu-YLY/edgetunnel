@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { buildSync } = require('esbuild');
+const { checkQrModule, writeQrModule } = require('./scripts/build-qr-runtime.cjs');
 
 // 自订体积预算：CF 平台上限为 64 MiB（2026-09 起全套餐统一按未压缩计），
 // 这里按 1 MiB 自我设限。真正要保护的不是平台上限，而是 _worker.js 的可读性
@@ -26,6 +27,7 @@ function 报告体积(bundle, 输出到stderr = false) {
 }
 
 function buildBundle() {
+  checkQrModule();
   return buildSync({
     absWorkingDir: __dirname,
     entryPoints: ['src/main.js'],
@@ -50,6 +52,7 @@ function main() {
     else if (args[i] === '--force') force = true;
     else throw new Error(`未知参数或缺少参数值: ${args[i]}`);
   }
+  if (!check) writeQrModule();
   const bundle = buildBundle();
   const 体积 = 报告体积(bundle, !out && !check);
   if (out) {
