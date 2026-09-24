@@ -54,6 +54,7 @@ jobs:
       - run: npm run check
       # build.yml 只跑 PR；push main 的完整门禁在这里补齐（workerd 运行时集成 + 打包 dry-run）
       - run: npm run test:runtime
+      - run: npm run test:proto
       - run: npm run deploy:check
 
       - name: Deploy
