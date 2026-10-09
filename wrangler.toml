@@ -5,6 +5,13 @@ compatibility_date = "2025-11-04"
 keep_vars = true
 compatibility_flags = ["nodejs_als"]
 
+# 关闭 workers.dev 路由：Cloudflare 滥用举报（Report ID 43468a4b064e04d7）针对的
+# 正是 edgetunnel.<subdomain>.workers.dev 这个默认地址。workers.dev 是账号级共享子域，
+# 持续暴露既招扫描器批量提报，也可能连累同账号下其他 Worker 共用子域。
+# 生产入口是 Dashboard 绑定的自定义域（edt2.liuyong.eu.org），自定义域由 Dashboard 管理，
+# 不在 wrangler 的 workers_dev 开关范围内；关闭后仅登录/订阅/代理入口改为走自定义域。
+workers_dev = false
+
 # M2-P0 收尾：开启 Workers Logs，线上错误可回溯（堆栈 + 上下文）
 [observability]
 enabled = true
